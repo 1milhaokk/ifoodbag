@@ -2376,7 +2376,7 @@ function initOrderBump() {
         bump: neutralBump,
         amount: Number((Number(shipping?.price || 0) + rewardExtraPrice).toFixed(2))
     });
-    const bumpPrice = 19.9;
+    const bumpPrice = 9.9;
 
     isOrderBumpEnabled().then((enabled) => {
         if (!enabled) {
