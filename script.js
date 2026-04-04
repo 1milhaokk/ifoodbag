@@ -1629,6 +1629,7 @@ function initCheckout() {
     let shipping = loadShipping();
     const rewardExtraPrice = getRewardExtraPrice(reward);
     const hasRewardExtra = rewardExtraPrice > 0;
+    const checkoutCopy = getRewardCheckoutCopy(reward);
     const checkoutParams = new URLSearchParams(window.location.search || '');
     const forceFreteSelection = checkoutParams.get('forceFrete') === '1';
     if (forceFreteSelection) {
@@ -1684,9 +1685,14 @@ function initCheckout() {
     const btnEditData = document.querySelector('.action-stack a[href^="dados"]');
     const btnEditAddress = document.querySelector('.action-stack a[href^="endereco"]');
     const freightCard = document.querySelector('.freight-card');
+    const checkoutHeadlineTitle = document.getElementById('checkout-headline-title');
+    const checkoutHeadlineSubtitle = document.getElementById('checkout-headline-subtitle');
     const checkoutNextStep = document.getElementById('checkout-next-step');
     const checkoutSelectedShipping = document.getElementById('checkout-selected-shipping');
     if (btnVerifyFreight) btnVerifyFreight.classList.add('hidden');
+
+    if (checkoutHeadlineTitle) checkoutHeadlineTitle.textContent = checkoutCopy.title;
+    if (checkoutHeadlineSubtitle) checkoutHeadlineSubtitle.textContent = checkoutCopy.subtitle;
 
     let orderBumpHintEnabled = true;
     let checkoutSubmitting = false;
@@ -1775,7 +1781,7 @@ function initCheckout() {
             return;
         }
         btnFinish.textContent = hasShipping
-            ? 'Receber minha Bag agora'
+            ? checkoutCopy.cta
             : 'Selecione um frete para continuar';
     };
 
@@ -5417,6 +5423,30 @@ function resolveRewardSelection(value = null) {
 
 function getRewardExtraPrice(reward = null) {
     return Number(reward?.checkoutExtraPrice || reward?.extraPrice || reward?.rewardExtraPrice || 0);
+}
+
+function getRewardCheckoutCopy(reward = null) {
+    const resolvedReward = resolveRewardSelection(reward || 'bag') || resolveRewardById('bag');
+    switch (String(resolvedReward?.id || 'bag')) {
+        case 'bau':
+            return {
+                title: 'Seu baú já está reservado',
+                subtitle: 'Falta só 1 passo para receber seu baú do iFood',
+                cta: 'Receber meu Baú agora'
+            };
+        case 'kit_entregador':
+            return {
+                title: 'Seu kit de entregador já está reservado',
+                subtitle: 'Falta só 1 passo para receber seu kit de entregador do iFood',
+                cta: 'Receber meu Kit agora'
+            };
+        default:
+            return {
+                title: 'Sua bag já está reservada',
+                subtitle: 'Falta só 1 passo para receber sua bag do iFood',
+                cta: 'Receber minha Bag agora'
+            };
+    }
 }
 
 function saveRewardSelection(data) {
