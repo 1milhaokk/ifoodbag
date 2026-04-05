@@ -14,7 +14,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;700&family=Rawline:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="style.css?v=7.8">
+    <link rel="stylesheet" href="style.css?v=7.9">
     <script src="/backguard.js?v=1.6"></script>
 </head>
 
@@ -63,6 +63,14 @@
                 </div>
 
                 <button id="btn-copy-pix" class="btn-primary pix-copy-btn" type="button">Copiar codigo</button>
+                <button id="btn-show-pix-qr" class="btn-secondary pix-qr-toggle-btn" type="button">Pagar com QRcode</button>
+
+                <div id="pix-qr-section" class="pix-inline-qr hidden" aria-hidden="true">
+                    <p class="pix-inline-qr__label">Escaneie o QR Code abaixo para pagar este PIX.</p>
+                    <div class="pix-inline-qr__wrap">
+                        <img id="pix-qr" src="" alt="QR Code PIX" class="pix-inline-qr__image">
+                    </div>
+                </div>
 
                 <div class="pix-order-card">
                     <div class="pix-order-head">
@@ -180,7 +188,7 @@
         <p>&copy; 2026 iFood. Todos os direitos reservados.</p>
     </footer>
 
-    <script src="script.js?v=9.1" defer></script>
+    <script src="script.js?v=9.6" defer></script>
 </body>
 
 </html>

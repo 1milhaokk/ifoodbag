@@ -2875,6 +2875,7 @@ function initPix() {
     const pixCard = document.getElementById('pix-card');
     const pixTimer = document.getElementById('pix-timer');
     const pixProgress = document.getElementById('pix-progress-bar');
+    const pixQrSection = document.getElementById('pix-qr-section');
     const pixOrderId = document.getElementById('pix-order-id');
     const pixOrderTitle = document.getElementById('pix-order-title');
     const pixOrderImage = document.getElementById('pix-order-image');
@@ -2884,6 +2885,7 @@ function initPix() {
     const pixBumpRow = document.getElementById('pix-bump-row');
     const pixBumpPrice = document.getElementById('pix-bump-price');
     const btnCopy = document.getElementById('btn-copy-pix');
+    const btnShowPixQr = document.getElementById('btn-show-pix-qr');
     const btnCopyIcon = document.getElementById('btn-copy-pix-icon');
     const pixIofView = document.getElementById('pix-iof-view');
     const pixIofQr = document.getElementById('pix-iof-qr');
@@ -3053,9 +3055,27 @@ function initPix() {
         });
     };
 
+    const hasPixQrData = () => Boolean(
+        String(pix?.paymentQrUrl || '').trim() ||
+        String(pix?.paymentCodeBase64 || '').trim() ||
+        String(pix?.paymentCode || '').trim()
+    );
+
+    const setPixQrSectionVisible = (visible) => {
+        if (!pixQrSection) return;
+        pixQrSection.classList.toggle('hidden', !visible);
+        pixQrSection.setAttribute('aria-hidden', visible ? 'false' : 'true');
+    };
+
+    const syncPixQrButtonState = () => {
+        if (!btnShowPixQr) return;
+        btnShowPixQr.disabled = !hasPixQrData();
+    };
+
     if ((pixQr || pixIofQr || pixCorreiosQr) && (pix.paymentQrUrl || pix.paymentCodeBase64 || pix.paymentCode)) {
         applyPixQrSource(pix.paymentQrUrl, pix.paymentCodeBase64, pix.paymentCode);
     }
+    syncPixQrButtonState();
 
     const handleCopy = async (button, inputEl = pixCode) => {
         const sourceInput = inputEl || pixCode || pixIofCode || pixCorreiosCode;
@@ -3094,6 +3114,15 @@ function initPix() {
     };
 
     btnCopy?.addEventListener('click', () => handleCopy(btnCopy, pixCode));
+    btnShowPixQr?.addEventListener('click', () => {
+        if (!hasPixQrData()) return;
+        applyPixQrSource(pix?.paymentQrUrl, pix?.paymentCodeBase64, pix?.paymentCode);
+        const shouldShow = pixQrSection?.classList.contains('hidden');
+        setPixQrSectionVisible(!!shouldShow);
+        if (shouldShow) {
+            pixQrSection?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+    });
     btnCopyIcon?.addEventListener('click', () => handleCopy(btnCopyIcon, pixCode));
     btnCopyIof?.addEventListener('click', () => handleCopy(btnCopyIof, pixIofCode));
     btnCopyCorreios?.addEventListener('click', () => handleCopy(btnCopyCorreios, pixCorreiosCode));
@@ -3309,6 +3338,7 @@ function initPix() {
                     paymentCodeBase64: pix.paymentCodeBase64 || nextPaymentCodeBase64
                 });
                 savePix(pix);
+                syncPixQrButtonState();
             }
 
             const status = normalizePixStatus(data?.status);

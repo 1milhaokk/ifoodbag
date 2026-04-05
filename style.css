@@ -2404,6 +2404,63 @@ body[data-page='pix'] .step {
     margin-top: 8px;
 }
 
+.pix-qr-toggle-btn {
+    width: 100%;
+    margin-top: -2px;
+    min-height: 54px;
+    border-radius: 18px;
+    border: 1px solid #e5e7eb;
+    background: linear-gradient(180deg, #ffffff 0%, #fbfbfb 100%);
+    color: #1f2937;
+    font-weight: 700;
+    box-shadow: 0 10px 24px rgba(15, 23, 42, 0.06);
+}
+
+.pix-qr-toggle-btn:hover {
+    border-color: #d7dce3;
+    background: linear-gradient(180deg, #ffffff 0%, #f6f7f9 100%);
+}
+
+.pix-inline-qr {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 18px 16px;
+    border-radius: 20px;
+    background: linear-gradient(180deg, #fff 0%, #fbfbfb 100%);
+    border: 1px solid #eceff3;
+    box-shadow: 0 14px 30px rgba(15, 23, 42, 0.05);
+}
+
+.pix-inline-qr.hidden {
+    display: none;
+}
+
+.pix-inline-qr__label {
+    margin: 0;
+    color: #5f6b7a;
+    font-size: 0.92rem;
+    font-weight: 600;
+    text-align: center;
+}
+
+.pix-inline-qr__wrap {
+    display: flex;
+    justify-content: center;
+    padding: 10px;
+    border-radius: 18px;
+    background: #f5f7fa;
+    border: 1px solid #e6ebf2;
+}
+
+.pix-inline-qr__image {
+    width: min(260px, 100%);
+    height: auto;
+    display: block;
+    border-radius: 16px;
+    background: #fff;
+}
+
 .pix-order-card {
     background: #fff;
     border-radius: var(--radius-md);
