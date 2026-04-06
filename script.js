@@ -7688,7 +7688,7 @@ function isPixPaid(pix) {
     if (!pix || typeof pix !== 'object') return false;
     if (pix.upsellPaid === true) return true;
     const status = String(pix.status || pix.statusRaw || '').toLowerCase();
-    return /paid|approved|confirm|completed|success|conclu|aprov/.test(status);
+    return /paid|approved|confirm|completed|conclu|aprov/.test(status);
 }
 
 function resolveResumeUrl() {

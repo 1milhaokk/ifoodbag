@@ -485,7 +485,6 @@ function isTerminalPixStatus(value = '') {
         status === 'pix_confirmed' ||
         status === 'approved' ||
         status === 'completed' ||
-        status === 'success' ||
         status === 'refunded' ||
         status === 'pix_refunded' ||
         status === 'refused' ||
@@ -516,6 +515,12 @@ function buildPixCreateInflightKey({ sessionId, gateway, shippingId, rewardId, t
         Number(totalAmount || 0).toFixed(2),
         upsellEnabled ? 'upsell' : 'base'
     ].join('|');
+}
+
+function normalizeParadiseCreateStatus(value = '') {
+    const status = normalizeStatus(value);
+    if (!status || status === 'success') return 'waiting_payment';
+    return status;
 }
 
 function getPixCreateInflight(key) {
@@ -1190,7 +1195,7 @@ module.exports = async (req, res) => {
                 paymentCode = paradiseData.paymentCode;
                 paymentCodeBase64 = paradiseData.paymentCodeBase64;
                 paymentQrUrl = paradiseData.paymentQrUrl;
-                statusRaw = paradiseData.status || getParadiseStatus(data);
+                statusRaw = normalizeParadiseCreateStatus(paradiseData.status || getParadiseStatus(data));
                 externalId = paradiseData.externalId || externalId;
 
                 if (txid && !paymentCode && !paymentCodeBase64 && !paymentQrUrl) {
@@ -1208,10 +1213,13 @@ module.exports = async (req, res) => {
                     }));
                     if (quickStatus?.response?.ok) {
                         const fromStatus = resolveParadiseResponse(quickStatus.data || {});
+                        const normalizedQuickStatus = normalizeParadiseCreateStatus(fromStatus.status);
                         paymentCode = paymentCode || fromStatus.paymentCode;
                         paymentCodeBase64 = paymentCodeBase64 || fromStatus.paymentCodeBase64;
                         paymentQrUrl = paymentQrUrl || fromStatus.paymentQrUrl;
-                        statusRaw = statusRaw || fromStatus.status;
+                        if (!statusRaw || statusRaw === 'waiting_payment' || statusRaw === 'pending') {
+                            statusRaw = normalizedQuickStatus;
+                        }
                     }
                 }
             } else {
