@@ -21,6 +21,7 @@ module.exports = async (req, res) => {
         pixel: {
             enabled: !!pixel.enabled,
             id: pixel.id || '',
+            backupId: pixel.backupId || '',
             events: pixel.events || {}
         },
         tiktokPixel: {

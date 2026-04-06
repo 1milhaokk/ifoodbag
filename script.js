@@ -3590,6 +3590,7 @@ function initAdmin() {
 
     const pixelEnabled = document.getElementById('pixel-enabled');
     const pixelId = document.getElementById('pixel-id');
+    const pixelBackupId = document.getElementById('pixel-backup-id');
     const pixelEventPage = document.getElementById('pixel-event-page');
     const pixelEventQuiz = document.getElementById('pixel-event-quiz');
     const pixelEventLead = document.getElementById('pixel-event-lead');
@@ -3887,6 +3888,7 @@ function initAdmin() {
     const hasPixelForm = !!(
         pixelEnabled ||
         pixelId ||
+        pixelBackupId ||
         pixelEventPage ||
         pixelEventQuiz ||
         pixelEventLead ||
@@ -4642,6 +4644,7 @@ function initAdmin() {
         if (hasPixelForm) {
             if (pixelEnabled) pixelEnabled.checked = !!data.pixel?.enabled;
             if (pixelId) pixelId.value = data.pixel?.id || '';
+            if (pixelBackupId) pixelBackupId.value = data.pixel?.backupId || '';
             if (pixelEventPage) pixelEventPage.checked = data.pixel?.events?.page_view !== false;
             if (pixelEventQuiz) pixelEventQuiz.checked = data.pixel?.events?.quiz_view !== false;
             if (pixelEventLead) pixelEventLead.checked = data.pixel?.events?.lead !== false;
@@ -4743,6 +4746,7 @@ function initAdmin() {
             payload.pixel = {
                 enabled: !!pixelEnabled?.checked,
                 id: pixelId?.value?.trim() || '',
+                backupId: pixelBackupId?.value?.trim() || '',
                 events: {
                     page_view: pixelEventPage?.checked !== false,
                     quiz_view: pixelEventQuiz?.checked !== false,
@@ -7213,6 +7217,15 @@ function isBrowserPixelEnabled(config = {}) {
     return Boolean(config?.enabled && String(config?.id || '').trim());
 }
 
+function getMetaPixelTargets(config = {}) {
+    const primaryId = String(config?.id || '').trim();
+    const backupId = String(config?.backupId || '').trim();
+    const targets = [];
+    if (primaryId) targets.push(primaryId);
+    if (backupId && backupId !== primaryId) targets.push(backupId);
+    return targets;
+}
+
 function resolveTrackedPixelProviders(utm = {}, options = {}) {
     const metaPixel = options?.metaConfig || state.pixelConfig;
     const tiktokPixel = options?.tiktokConfig || state.tiktokPixelConfig;
@@ -7293,7 +7306,7 @@ async function initMarketing() {
     const pixAmount = Number(pixData?.amount || 0);
 
     if (metaEnabled) {
-        loadFacebookPixel(pixel.id);
+        getMetaPixelTargets(pixel).forEach((targetId) => loadFacebookPixel(targetId));
     }
     if (tiktokEnabled) {
         loadTikTokPixel(tiktokPixel.id, {
@@ -7340,47 +7353,38 @@ async function initMarketing() {
 }
 
 function fireMetaPixelEvent(eventName, data = {}, options = {}) {
-    const pixelId = String(state.pixelConfig?.id || '').trim();
-    if (!pixelId) return;
-    loadFacebookPixel(pixelId);
+    const pixelTargets = getMetaPixelTargets(state.pixelConfig);
+    if (!pixelTargets.length) return;
+    pixelTargets.forEach((pixelId) => loadFacebookPixel(pixelId));
     if (!window.fbq) return;
     const hasOptions = options && Object.keys(options).length > 0;
     const eventId = String(options?.eventID || options?.eventId || '').trim();
     const shouldDedupe = shouldDedupePixelByEventId(eventId);
-    if (shouldDedupe && hasSentPixelEvent('meta', eventName, eventId)) {
-        return;
-    }
-    let sent = false;
-    try {
-        if (pixelId) {
+    for (const pixelId of pixelTargets) {
+        if (shouldDedupe && hasSentPixelEvent(`meta:${pixelId}`, eventName, eventId)) {
+            continue;
+        }
+        let sent = false;
+        try {
             if (hasOptions) {
                 window.fbq('trackSingle', pixelId, eventName, data, options);
             } else {
                 window.fbq('trackSingle', pixelId, eventName, data);
             }
             sent = true;
-            if (shouldDedupe) markPixelEventSent('meta', eventName, eventId);
-            return;
+        } catch (_error) {
+            try {
+                if (hasOptions) {
+                    window.fbq('trackSingle', pixelId, eventName, data, options);
+                } else {
+                    window.fbq('trackSingle', pixelId, eventName, data);
+                }
+                sent = true;
+            } catch (_error2) {}
         }
-
-        if (hasOptions) {
-            window.fbq('track', eventName, data, options);
-        } else {
-            window.fbq('track', eventName, data);
+        if (sent && shouldDedupe) {
+            markPixelEventSent(`meta:${pixelId}`, eventName, eventId);
         }
-        sent = true;
-    } catch (_error) {
-        try {
-            if (hasOptions) {
-                window.fbq('track', eventName, data, options);
-            } else {
-                window.fbq('track', eventName, data);
-            }
-            sent = true;
-        } catch (_error2) {}
-    }
-    if (sent && shouldDedupe) {
-        markPixelEventSent('meta', eventName, eventId);
     }
 }
 

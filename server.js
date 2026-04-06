@@ -479,6 +479,7 @@ app.get('/api/site/config', async (req, res) => {
         pixel: {
             enabled: !!pixel.enabled,
             id: pixel.id || '',
+            backupId: pixel.backupId || '',
             events: pixel.events || {}
         },
         tiktokPixel: {
@@ -530,7 +531,12 @@ app.post('/api/admin/settings', async (req, res) => {
     const payload = {
         ...defaultSettings,
         ...(req.body || {}),
-        pixel: { ...defaultSettings.pixel, ...(req.body?.pixel || {}) },
+        pixel: {
+            ...defaultSettings.pixel,
+            ...(req.body?.pixel || {}),
+            id: String(req.body?.pixel?.id || '').trim(),
+            backupId: String(req.body?.pixel?.backupId || '').trim()
+        },
         tiktokPixel: { ...defaultSettings.tiktokPixel, ...(req.body?.tiktokPixel || {}) },
         utmfy: { ...defaultSettings.utmfy, ...(req.body?.utmfy || {}) }
     };

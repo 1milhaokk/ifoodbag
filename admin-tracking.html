@@ -69,7 +69,7 @@
             <h2>Pixel do Meta</h2>
             <span class="admin-chip">Facebook Ads</span>
           </div>
-          <p class="admin-hint">Tracking 100% browser-side. Informe apenas o Pixel ID e escolha os eventos.</p>
+          <p class="admin-hint">Tracking 100% browser-side. Informe o Pixel ID principal, opcionalmente um pixel reserva, e escolha os eventos.</p>
           <div class="admin-grid">
             <label class="admin-switch">
               <input type="checkbox" id="pixel-enabled" />
@@ -78,6 +78,10 @@
             <div class="input-group">
               <input type="text" id="pixel-id" class="floating-input" placeholder=" " />
               <label for="pixel-id" class="floating-label">Pixel ID</label>
+            </div>
+            <div class="input-group">
+              <input type="text" id="pixel-backup-id" class="floating-input" placeholder=" " />
+              <label for="pixel-backup-id" class="floating-label">Pixel reserva</label>
             </div>
             <div class="admin-checkboxes">
               <label><input type="checkbox" id="pixel-event-page" /> PageView</label>
