@@ -3646,6 +3646,17 @@ function initAdmin() {
     const gatewayParadiseState = document.getElementById('gateway-paradise-state');
     const gatewayCards = Array.from(document.querySelectorAll('[data-gateway-card]'));
     const gatewayConfigToggles = Array.from(document.querySelectorAll('[data-gateway-config-toggle]'));
+    const gatewayTestBtn = document.getElementById('admin-test-gateways');
+    const gatewayTestModal = document.getElementById('gateway-test-modal');
+    const gatewayTestClose = document.getElementById('gateway-test-close');
+    const gatewayTestAmount = document.getElementById('gateway-test-amount');
+    const gatewayTestGhostspay = document.getElementById('gateway-test-ghostspay');
+    const gatewayTestSunize = document.getElementById('gateway-test-sunize');
+    const gatewayTestParadise = document.getElementById('gateway-test-paradise');
+    const gatewayTestGenerate = document.getElementById('gateway-test-generate');
+    const gatewayTestReset = document.getElementById('gateway-test-reset');
+    const gatewayTestStatus = document.getElementById('gateway-test-status');
+    const gatewayTestResults = document.getElementById('gateway-test-results');
 
     const saveBtn = document.getElementById('admin-save');
     const saveStatus = document.getElementById('admin-save-status');
@@ -3798,6 +3809,7 @@ function initAdmin() {
     let currentSettings = null;
     let currentLeadDetail = null;
     let currentIpBlacklist = [];
+    let gatewayTestRunning = false;
 
     const ensurePushcutTemplateFields = () => {
         const pushcutSection = document.querySelector('.pushcut-settings');
@@ -4082,6 +4094,195 @@ function initAdmin() {
                 </article>
             `)
             .join('');
+    };
+
+    const buildGatewayTestQrFallbackUrl = (codeText = '') => {
+        const clean = String(codeText || '').trim();
+        if (!clean) return '';
+        const url = new URL('https://quickchart.io/qr');
+        url.searchParams.set('text', clean);
+        url.searchParams.set('size', '620');
+        url.searchParams.set('margin', '2');
+        url.searchParams.set('ecLevel', 'M');
+        return url.toString();
+    };
+
+    const resolveGatewayTestQrSrc = (result = {}) => {
+        const qrSource = String(result?.paymentQrUrl || result?.paymentCodeBase64 || '').trim();
+        if (qrSource) {
+            if (/^https?:\/\//i.test(qrSource) || qrSource.startsWith('data:image')) {
+                return qrSource;
+            }
+            return `data:image/png;base64,${qrSource}`;
+        }
+        return buildGatewayTestQrFallbackUrl(result?.paymentCode || '');
+    };
+
+    const setGatewayTestModalVisible = (visible) => {
+        if (!gatewayTestModal) return;
+        gatewayTestModal.classList.toggle('hidden', !visible);
+        gatewayTestModal.setAttribute('aria-hidden', visible ? 'false' : 'true');
+        document.body.classList.toggle('modal-open', !!visible);
+    };
+
+    const resetGatewayTestResults = () => {
+        if (gatewayTestResults) {
+            gatewayTestResults.innerHTML = `
+                <div class="gateway-test-empty">
+                    Defina o valor, escolha os gateways e gere os PIXs de teste.
+                </div>
+            `;
+        }
+        if (gatewayTestStatus) gatewayTestStatus.textContent = '';
+    };
+
+    const syncGatewayTestSelectionDefaults = () => {
+        if (gatewayTestGhostspay) gatewayTestGhostspay.checked = gatewayGhostspayEnabled?.checked !== false;
+        if (gatewayTestSunize) gatewayTestSunize.checked = gatewaySunizeEnabled?.checked === true;
+        if (gatewayTestParadise) gatewayTestParadise.checked = gatewayParadiseEnabled?.checked === true;
+        if (gatewayTestAmount && !String(gatewayTestAmount.value || '').trim()) {
+            gatewayTestAmount.value = '19,90';
+        }
+    };
+
+    const getSelectedGatewayTests = () => {
+        const gateways = [];
+        if (gatewayTestGhostspay?.checked) gateways.push('ghostspay');
+        if (gatewayTestSunize?.checked) gateways.push('sunize');
+        if (gatewayTestParadise?.checked) gateways.push('paradise');
+        return gateways;
+    };
+
+    const renderGatewayTestResults = (results = [], amount = 0) => {
+        if (!gatewayTestResults) return;
+        const list = Array.isArray(results) ? results : [];
+        if (!list.length) {
+            resetGatewayTestResults();
+            return;
+        }
+        gatewayTestResults.innerHTML = list.map((result) => {
+            const gatewayLabel = escapeHtml(formatDetailValue(result?.gatewayLabel || result?.gateway));
+            const amountText = escapeHtml(formatCurrency(Number(result?.amount || amount || 0)));
+            const qrSrc = resolveGatewayTestQrSrc(result);
+            const statusText = escapeHtml(formatDetailValue(result?.statusRaw, result?.ok ? 'gerado' : 'falha'));
+            const txidText = escapeHtml(formatDetailValue(result?.txid, '-'));
+            const externalIdText = escapeHtml(formatDetailValue(result?.externalId, '-'));
+            const paymentCode = String(result?.paymentCode || '').trim();
+            const detailText = escapeHtml(formatDetailValue(result?.detail, '-'));
+            return `
+                <article class="gateway-test-card${result?.ok ? '' : ' gateway-test-card--error'}">
+                    <div class="gateway-test-card__head">
+                        <div>
+                            <h4>${gatewayLabel}</h4>
+                            <span>${result?.ok ? 'PIX gerado para teste manual' : 'Falha ao gerar PIX de teste'}</span>
+                        </div>
+                        <span class="admin-chip${result?.ok ? '' : ' admin-chip--danger'}">${result?.ok ? 'Gerado' : 'Falhou'}</span>
+                    </div>
+                    <div class="gateway-test-card__meta">
+                        <span>Valor: <strong>${amountText}</strong></span>
+                        <span>Status: <strong>${statusText}</strong></span>
+                    </div>
+                    <div class="gateway-test-card__details">
+                        <span>TXID: <code>${txidText}</code></span>
+                        <span>Referencia: <code>${externalIdText}</code></span>
+                    </div>
+                    ${result?.ok && qrSrc ? `
+                        <div class="gateway-test-card__qr">
+                            <img src="${escapeHtml(qrSrc)}" alt="QR Code ${gatewayLabel}" loading="lazy" />
+                        </div>
+                    ` : ''}
+                    ${paymentCode ? `
+                        <div class="gateway-test-card__copy">
+                            <input type="text" value="${escapeHtml(paymentCode)}" readonly />
+                            <button class="btn-secondary gateway-test-copy" type="button" data-gateway-test-copy="${escapeHtml(paymentCode)}">Copiar codigo</button>
+                        </div>
+                    ` : ''}
+                    ${!result?.ok ? `<div class="gateway-test-card__error">${detailText}</div>` : ''}
+                </article>
+            `;
+        }).join('');
+    };
+
+    const openGatewayTestModal = () => {
+        syncGatewayTestSelectionDefaults();
+        resetGatewayTestResults();
+        setGatewayTestModalVisible(true);
+        gatewayTestAmount?.focus();
+        gatewayTestAmount?.select();
+    };
+
+    const closeGatewayTestModal = () => {
+        if (gatewayTestRunning) return;
+        setGatewayTestModalVisible(false);
+    };
+
+    const runGatewayTests = async () => {
+        if (!gatewayTestGenerate || gatewayTestRunning) return;
+        const amountRaw = String(gatewayTestAmount?.value || '').trim();
+        const normalizedAmount = Number(amountRaw.replace(',', '.'));
+        const gateways = getSelectedGatewayTests();
+        if (!Number.isFinite(normalizedAmount) || normalizedAmount < 1) {
+            showToast('Informe um valor valido a partir de R$ 1,00.', 'error');
+            gatewayTestAmount?.focus();
+            return;
+        }
+        if (!gateways.length) {
+            showToast('Selecione ao menos um gateway para testar.', 'error');
+            return;
+        }
+
+        gatewayTestRunning = true;
+        gatewayTestGenerate.disabled = true;
+        if (gatewayTestReset) gatewayTestReset.disabled = true;
+        if (gatewayTestBtn) gatewayTestBtn.disabled = true;
+        if (gatewayTestStatus) gatewayTestStatus.textContent = 'Gerando PIXs de teste direto nos gateways salvos...';
+        if (gatewayTestResults) {
+            gatewayTestResults.innerHTML = `<div class="gateway-test-empty">Gerando os testes. Aguarde alguns segundos...</div>`;
+        }
+
+        try {
+            const res = await adminFetch('/api/admin/gateway-test-pix', {
+                method: 'POST',
+                body: JSON.stringify({
+                    amount: normalizedAmount,
+                    gateways
+                })
+            });
+            const data = await res.json().catch(() => ({}));
+
+            if (!res.ok || data?.ok === false) {
+                if (gatewayTestStatus) gatewayTestStatus.textContent = data?.error || 'Falha ao gerar os testes.';
+                if (gatewayTestResults) {
+                    gatewayTestResults.innerHTML = `<div class="gateway-test-empty">${escapeHtml(data?.error || 'Falha ao gerar os testes.')}</div>`;
+                }
+                showToast(data?.error || 'Falha ao gerar os testes dos gateways.', 'error');
+                return;
+            }
+
+            renderGatewayTestResults(data?.results || [], Number(data?.amount || normalizedAmount));
+            const okCount = (Array.isArray(data?.results) ? data.results : []).filter((item) => item?.ok).length;
+            const failCount = (Array.isArray(data?.results) ? data.results : []).filter((item) => !item?.ok).length;
+            if (gatewayTestStatus) {
+                gatewayTestStatus.textContent = `Gerados ${okCount} gateway(s) com sucesso. Falhas: ${failCount}.`;
+            }
+            showToast(
+                okCount > 0
+                    ? `Teste concluido. ${okCount} gateway(s) geraram PIX.`
+                    : 'Nenhum gateway conseguiu gerar PIX de teste.',
+                okCount > 0 ? 'success' : 'error'
+            );
+        } catch (_error) {
+            if (gatewayTestStatus) gatewayTestStatus.textContent = 'Falha de rede ao gerar os testes.';
+            if (gatewayTestResults) {
+                gatewayTestResults.innerHTML = '<div class="gateway-test-empty">Falha de rede ao gerar os testes. Tente novamente.</div>';
+            }
+            showToast('Falha de rede ao gerar os testes dos gateways.', 'error');
+        } finally {
+            gatewayTestRunning = false;
+            gatewayTestGenerate.disabled = false;
+            if (gatewayTestReset) gatewayTestReset.disabled = false;
+            if (gatewayTestBtn) gatewayTestBtn.disabled = false;
+        }
     };
 
     const formatJourneySpan = (pages = []) => {
@@ -5850,6 +6051,29 @@ function initAdmin() {
             showToast('Nao foi possivel copiar o payload.', 'error');
         }
     });
+    gatewayTestBtn?.addEventListener('click', openGatewayTestModal);
+    gatewayTestClose?.addEventListener('click', closeGatewayTestModal);
+    gatewayTestReset?.addEventListener('click', resetGatewayTestResults);
+    gatewayTestGenerate?.addEventListener('click', runGatewayTests);
+    gatewayTestModal?.addEventListener('click', (event) => {
+        if (event.target === gatewayTestModal) {
+            closeGatewayTestModal();
+        }
+    });
+    gatewayTestResults?.addEventListener('click', async (event) => {
+        const button = event.target?.closest?.('[data-gateway-test-copy]');
+        if (!button) return;
+        const code = String(button.getAttribute('data-gateway-test-copy') || '').trim();
+        if (!code) return;
+        try {
+            await navigator.clipboard.writeText(code);
+        } catch (_error) {
+            const input = button.parentElement?.querySelector('input');
+            input?.select?.();
+            document.execCommand('copy');
+        }
+        showToast('Codigo PIX copiado.', 'success');
+    });
     leadDetailLookupBtn?.addEventListener('click', consultLeadTransaction);
     leadDetailBlockBtn?.addEventListener('click', blockCurrentLeadIp);
     leadDetailUnblockBtn?.addEventListener('click', async () => {
@@ -5862,6 +6086,10 @@ function initAdmin() {
     document.addEventListener('keydown', (event) => {
         if (event.key === 'Escape' && leadDetailModal && !leadDetailModal.classList.contains('hidden')) {
             closeLeadDetailModal();
+            return;
+        }
+        if (event.key === 'Escape' && gatewayTestModal && !gatewayTestModal.classList.contains('hidden')) {
+            closeGatewayTestModal();
         }
     });
 

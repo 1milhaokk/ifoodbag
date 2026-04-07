@@ -11,7 +11,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/style.css?v=3.7" />
+  <link rel="stylesheet" href="/style.css?v=3.8" />
   <script src="/backguard.js?v=1.5"></script>
 </head>
 <body data-page="admin" data-admin="gateways">
@@ -47,6 +47,7 @@
           <p>Central de roteamento, credenciais e conversao por gateway em tempo real.</p>
         </div>
         <div class="admin-topbar-actions">
+          <button id="admin-test-gateways" class="btn-secondary" type="button">Testar gateways</button>
           <button id="admin-save" class="btn-primary" type="button">Salvar configuracoes</button>
           <span id="admin-save-status" class="admin-muted"></span>
         </div>
@@ -328,9 +329,58 @@
     </main>
   </div>
 
+  <div id="gateway-test-modal" class="admin-modal hidden" role="dialog" aria-modal="true" aria-labelledby="gateway-test-title">
+    <div class="admin-modal-card gateway-test-modal-card">
+      <button id="gateway-test-close" class="admin-modal-close" type="button" aria-label="Fechar teste de gateways">&times;</button>
+      <div class="gateway-test-shell">
+        <div class="admin-modal-head gateway-test-head">
+          <h3 id="gateway-test-title">Teste manual de gateways</h3>
+          <p>Gera PIX direto no gateway escolhido, sem criar lead, sem UTMify, sem Pushcut e sem tracking.</p>
+        </div>
+
+        <div class="gateway-test-form-grid">
+          <div class="input-group">
+            <input type="text" id="gateway-test-amount" class="floating-input" placeholder=" " inputmode="decimal" />
+            <label for="gateway-test-amount" class="floating-label">Valor do teste em reais</label>
+          </div>
+        </div>
+
+        <div class="gateway-test-selector">
+          <span class="gateway-test-selector__label">Escolha os gateways</span>
+          <div class="gateway-test-option-grid">
+            <label class="gateway-test-option">
+              <input type="checkbox" id="gateway-test-ghostspay" />
+              <span>GhostsPay</span>
+            </label>
+            <label class="gateway-test-option">
+              <input type="checkbox" id="gateway-test-sunize" />
+              <span>Sunize</span>
+            </label>
+            <label class="gateway-test-option">
+              <input type="checkbox" id="gateway-test-paradise" />
+              <span>Paradise</span>
+            </label>
+          </div>
+        </div>
+
+        <div class="admin-inline-actions gateway-test-actions">
+          <button id="gateway-test-generate" class="btn-primary" type="button">Gerar testes</button>
+          <button id="gateway-test-reset" class="btn-secondary" type="button">Limpar resultado</button>
+          <span id="gateway-test-status" class="admin-muted"></span>
+        </div>
+
+        <div id="gateway-test-results" class="gateway-test-results">
+          <div class="gateway-test-empty">
+            Defina o valor, escolha os gateways e gere os PIXs de teste.
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
 
-  <script src="/script.js?v=10.0" defer></script>
+  <script src="/script.js?v=10.1" defer></script>
 </body>
 </html>
 

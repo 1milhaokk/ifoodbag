@@ -12,9 +12,18 @@ const { sendUtmfy } = require('../../lib/utmfy');
 const { updateLeadByPixTxid, getLeadByPixTxid, updateLeadBySessionId, getLeadBySessionId } = require('../../lib/lead-store');
 const { sendPushcut } = require('../../lib/pushcut');
 const { requestTransactionStatus: requestAtivushubStatus } = require('../../lib/ativushub-provider');
-const { requestTransactionById: requestGhostspayStatus } = require('../../lib/ghostspay-provider');
-const { requestTransactionById: requestSunizeStatus } = require('../../lib/sunize-provider');
-const { requestTransactionById: requestParadiseStatus } = require('../../lib/paradise-provider');
+const {
+    requestCreateTransaction: requestGhostspayCreate,
+    requestTransactionById: requestGhostspayStatus
+} = require('../../lib/ghostspay-provider');
+const {
+    requestCreateTransaction: requestSunizeCreate,
+    requestTransactionById: requestSunizeStatus
+} = require('../../lib/sunize-provider');
+const {
+    requestCreateTransaction: requestParadiseCreate,
+    requestTransactionById: requestParadiseStatus
+} = require('../../lib/paradise-provider');
 const {
     getAtivusStatus,
     isAtivusPaidStatus,
@@ -481,6 +490,248 @@ function normalizeAmountPossiblyCents(value) {
         return Number((amount / 100).toFixed(2));
     }
     return Number(amount.toFixed(2));
+}
+
+function pickText(...values) {
+    for (const value of values) {
+        if (value === undefined || value === null) continue;
+        const text = String(value).trim();
+        if (text) return text;
+    }
+    return '';
+}
+
+function looksLikePixCopyPaste(value = '') {
+    const text = String(value || '').trim();
+    if (!text) return false;
+    if (text.startsWith('000201') && text.length >= 30) return true;
+    return /br\.gov\.bcb\.pix/i.test(text);
+}
+
+function resolveAdminClientIp(req) {
+    return String(req?.headers?.['x-forwarded-for'] || '')
+        .split(',')[0]
+        .trim() || String(req?.socket?.remoteAddress || '').trim() || '127.0.0.1';
+}
+
+function normalizeGatewayTestSelection(input) {
+    const list = Array.isArray(input) ? input : [input];
+    const normalized = list
+        .map((value) => String(value || '').trim().toLowerCase())
+        .filter((value) => value === 'ghostspay' || value === 'sunize' || value === 'paradise');
+    return Array.from(new Set(normalized));
+}
+
+function parseGatewayTestAmount(value) {
+    const raw = String(value ?? '').trim().replace(',', '.');
+    if (!raw) return null;
+    const amount = Number(raw);
+    if (!Number.isFinite(amount)) return null;
+    if (amount < 1) return null;
+    if (amount > 100000) return null;
+    return Number(amount.toFixed(2));
+}
+
+function resolveGhostspayCreateResponse(data = {}) {
+    const root = asObject(data);
+    const nested = asObject(root.data);
+    const transaction = asObject(root.transaction);
+    const payment = asObject(root.payment);
+    const pix = asObject(root.pix || nested.pix || transaction.pix || payment.pix);
+    const txid = pickText(
+        root.id,
+        root.transactionId,
+        root.transaction_id,
+        root.txid,
+        nested.id,
+        nested.transactionId,
+        nested.transaction_id,
+        nested.txid,
+        transaction.id,
+        payment.id,
+        pix.id,
+        pix.txid
+    );
+    let paymentCode = pickText(
+        pix.qrcodeText,
+        pix.qrCodeText,
+        pix.qrcode_text,
+        pix.qr_code_text,
+        pix.brCode,
+        pix.br_code,
+        pix.code,
+        pix.copyPaste,
+        pix.copy_paste,
+        pix.emv,
+        pix.payload,
+        pix.pixCode,
+        pix.pix_code,
+        root.paymentCode,
+        nested.paymentCode,
+        transaction.qrcodeText,
+        payment.qrcodeText,
+        root.copyPaste,
+        nested.copyPaste
+    );
+    let qrRaw = pickText(
+        pix.qrcode,
+        pix.qrCode,
+        pix.qrcodeImage,
+        pix.qrCodeImage,
+        pix.qrcodeBase64,
+        pix.qrCodeBase64,
+        pix.qr_code_base64,
+        pix.image,
+        pix.imageBase64,
+        pix.base64,
+        root.qrcode,
+        nested.qrcode,
+        root.qrCode,
+        nested.qrCode,
+        root.qrcodeBase64,
+        nested.qrcodeBase64,
+        root.qrCodeBase64,
+        nested.qrCodeBase64
+    );
+    const qrUrl = pickText(
+        pix.qrcodeUrl,
+        pix.qrCodeUrl,
+        pix.qrcode_url,
+        pix.qr_code_url,
+        root.qrcodeUrl,
+        nested.qrcodeUrl
+    );
+    if (!paymentCode && looksLikePixCopyPaste(qrRaw)) {
+        paymentCode = qrRaw;
+        qrRaw = '';
+    }
+    let paymentCodeBase64 = '';
+    let paymentQrUrl = '';
+    if (qrUrl) {
+        paymentQrUrl = qrUrl;
+    } else if (qrRaw) {
+        if (/^https?:\/\//i.test(qrRaw) || qrRaw.startsWith('data:image')) {
+            paymentQrUrl = qrRaw;
+        } else {
+            paymentCodeBase64 = qrRaw;
+        }
+    }
+    const status = pickText(root.status, nested.status, transaction.status, payment.status);
+    return {
+        txid: String(txid || '').trim(),
+        paymentCode: String(paymentCode || '').trim(),
+        paymentCodeBase64: String(paymentCodeBase64 || '').trim(),
+        paymentQrUrl: String(paymentQrUrl || '').trim(),
+        status: String(status || '').trim()
+    };
+}
+
+function resolveSunizeCreateResponse(data = {}) {
+    const txid = String(
+        data?.id ||
+        data?.transaction_id ||
+        data?.transactionId ||
+        data?.data?.id ||
+        ''
+    ).trim();
+    const paymentCode = String(
+        data?.pix?.payload ||
+        data?.pix?.copyPaste ||
+        data?.pix?.copy_paste ||
+        data?.pixPayload ||
+        ''
+    ).trim();
+    const qrRaw = String(
+        data?.pix?.qrcode ||
+        data?.pix?.qrCode ||
+        data?.pix?.qr_code ||
+        data?.pix?.qrcodeBase64 ||
+        data?.pix?.qrCodeBase64 ||
+        data?.pix?.qr_code_base64 ||
+        ''
+    ).trim();
+    const qrUrl = String(
+        data?.pix?.qrcode_url ||
+        data?.pix?.qrCodeUrl ||
+        data?.pix?.qr_code_url ||
+        ''
+    ).trim();
+    const externalId = String(data?.external_id || data?.externalId || '').trim();
+    const status = getSunizeStatus(data);
+    let paymentCodeBase64 = '';
+    let paymentQrUrl = '';
+    if (qrUrl) {
+        paymentQrUrl = qrUrl;
+    } else if (qrRaw) {
+        if (/^https?:\/\//i.test(qrRaw) || qrRaw.startsWith('data:image')) {
+            paymentQrUrl = qrRaw;
+        } else {
+            paymentCodeBase64 = qrRaw;
+        }
+    }
+    return {
+        txid,
+        paymentCode,
+        paymentCodeBase64,
+        paymentQrUrl,
+        status,
+        externalId
+    };
+}
+
+function resolveParadiseCreateResponse(data = {}) {
+    const root = asObject(data);
+    const nested = asObject(root.data);
+    const txid = pickText(
+        root.transaction_id,
+        root.transactionId,
+        nested.transaction_id,
+        nested.transactionId,
+        root.id,
+        nested.id
+    );
+    const externalId = pickText(
+        root.id,
+        root.external_id,
+        root.externalId,
+        root.reference,
+        nested.id,
+        nested.external_id,
+        nested.externalId,
+        nested.reference
+    );
+    const paymentCode = pickText(
+        root.qr_code,
+        root.pix_code,
+        nested.qr_code,
+        nested.pix_code
+    );
+    const qrRaw = pickText(
+        root.qr_code_base64,
+        root.qrcode_base64,
+        root.qrCodeBase64,
+        nested.qr_code_base64,
+        nested.qrcode_base64,
+        nested.qrCodeBase64
+    );
+    let paymentCodeBase64 = '';
+    let paymentQrUrl = '';
+    if (qrRaw) {
+        if (/^https?:\/\//i.test(qrRaw) || qrRaw.startsWith('data:image')) {
+            paymentQrUrl = qrRaw;
+        } else {
+            paymentCodeBase64 = qrRaw;
+        }
+    }
+    const status = pickText(root.status, nested.status, root.raw_status, nested.raw_status);
+    return {
+        txid: String(txid || '').trim(),
+        paymentCode: String(paymentCode || '').trim(),
+        paymentCodeBase64: String(paymentCodeBase64 || '').trim(),
+        paymentQrUrl: String(paymentQrUrl || '').trim(),
+        status: String(status || '').trim(),
+        externalId: String(externalId || '').trim()
+    };
 }
 
 function pickSecretInput(inputValue, existingValue) {
@@ -2800,6 +3051,265 @@ async function pushcutTest(req, res) {
     });
 }
 
+async function gatewayTestPix(req, res) {
+    if (req.method !== 'POST') {
+        res.status(405).json({ error: 'Method not allowed' });
+        return;
+    }
+    if (!requireAdmin(req, res)) return;
+
+    let body = {};
+    try {
+        body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body || {});
+    } catch (_error) {
+        res.status(400).json({ error: 'JSON invalido.' });
+        return;
+    }
+
+    const amount = parseGatewayTestAmount(body?.amount);
+    if (!amount) {
+        res.status(400).json({ error: 'Informe um valor valido a partir de R$ 1,00.' });
+        return;
+    }
+
+    const gateways = normalizeGatewayTestSelection(body?.gateways);
+    if (!gateways.length) {
+        res.status(400).json({ error: 'Selecione ao menos um gateway para testar.' });
+        return;
+    }
+
+    const settingsData = await getSettings().catch(() => ({}));
+    const payments = buildPaymentsConfig(settingsData?.payments || {});
+    const baseIp = resolveAdminClientIp(req);
+    const baseCustomer = {
+        name: 'Teste Gateway Admin',
+        email: `gateway.test.${Date.now()}@example.com`,
+        phoneDigits: '11999999999',
+        phoneE164: '+5511999999999',
+        document: '52998224725'
+    };
+
+    const createOne = async (gateway) => {
+        const label = gatewayLabel(gateway);
+        const gatewayConfig = payments?.gateways?.[gateway] || {};
+        const testKey = `admin-gateway-test-${gateway}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        const baseResult = {
+            gateway,
+            gatewayLabel: label,
+            ok: false,
+            amount,
+            txid: '',
+            paymentCode: '',
+            paymentCodeBase64: '',
+            paymentQrUrl: '',
+            statusRaw: '',
+            externalId: '',
+            detail: ''
+        };
+
+        try {
+            if (gateway === 'ghostspay') {
+                if (!String(gatewayConfig.baseUrl || '').trim() || !String(gatewayConfig.secretKey || gatewayConfig.basicAuthBase64 || '').trim()) {
+                    return { ...baseResult, detail: 'Credenciais GhostsPay nao configuradas.' };
+                }
+
+                const payload = {
+                    customer: {
+                        name: baseCustomer.name,
+                        email: baseCustomer.email,
+                        phone: baseCustomer.phoneDigits,
+                        document: {
+                            number: baseCustomer.document,
+                            type: 'CPF'
+                        }
+                    },
+                    paymentMethod: 'PIX',
+                    amount: Math.max(1, Math.round(amount * 100)),
+                    items: [
+                        {
+                            title: 'Teste manual admin',
+                            unitPrice: Math.max(1, Math.round(amount * 100)),
+                            quantity: 1
+                        }
+                    ],
+                    pix: {
+                        expiresInDays: 1
+                    },
+                    ip: baseIp,
+                    description: 'Teste manual de gateway via admin',
+                    metadata: {
+                        adminTest: true,
+                        orderId: testKey
+                    }
+                };
+
+                let { response, data } = await requestGhostspayCreate(gatewayConfig, payload);
+                if (!response?.ok) {
+                    return {
+                        ...baseResult,
+                        detail: data?.error || data?.message || `HTTP ${response?.status || 0}`
+                    };
+                }
+                let parsed = resolveGhostspayCreateResponse(data || {});
+                if (parsed.txid && !parsed.paymentCode && !parsed.paymentCodeBase64 && !parsed.paymentQrUrl) {
+                    const quickStatus = await requestGhostspayStatus({
+                        ...gatewayConfig,
+                        timeoutMs: Math.max(1200, Math.min(Number(gatewayConfig.timeoutMs || 12000), 3500))
+                    }, parsed.txid).catch(() => ({ response: { ok: false }, data: {} }));
+                    if (quickStatus?.response?.ok) {
+                        const hydrated = resolveGhostspayCreateResponse(quickStatus.data || {});
+                        parsed = {
+                            ...parsed,
+                            paymentCode: parsed.paymentCode || hydrated.paymentCode,
+                            paymentCodeBase64: parsed.paymentCodeBase64 || hydrated.paymentCodeBase64,
+                            paymentQrUrl: parsed.paymentQrUrl || hydrated.paymentQrUrl,
+                            status: parsed.status || hydrated.status
+                        };
+                    }
+                }
+
+                return {
+                    ...baseResult,
+                    ok: true,
+                    txid: parsed.txid,
+                    paymentCode: parsed.paymentCode,
+                    paymentCodeBase64: parsed.paymentCodeBase64,
+                    paymentQrUrl: parsed.paymentQrUrl,
+                    statusRaw: parsed.status || '',
+                    externalId: testKey
+                };
+            }
+
+            if (gateway === 'sunize') {
+                if (!String(gatewayConfig.baseUrl || '').trim() || !String(gatewayConfig.apiKey || '').trim() || !String(gatewayConfig.apiSecret || '').trim()) {
+                    return { ...baseResult, detail: 'Credenciais Sunize nao configuradas.' };
+                }
+
+                const payloadBase = {
+                    external_id: testKey,
+                    total_amount: Number(amount.toFixed(2)),
+                    payment_method: 'PIX',
+                    items: [
+                        {
+                            id: 'admin-gateway-test-1',
+                            title: 'Teste manual admin',
+                            description: 'Teste manual de gateway via admin',
+                            price: Number(amount.toFixed(2)),
+                            quantity: 1,
+                            is_physical: false
+                        }
+                    ],
+                    ip: baseIp,
+                    customer: {
+                        name: baseCustomer.name,
+                        email: baseCustomer.email,
+                        phone: baseCustomer.phoneE164,
+                        document_type: 'CPF',
+                        document: baseCustomer.document
+                    }
+                };
+
+                let { response, data } = await requestSunizeCreate(gatewayConfig, payloadBase);
+                if ((!response?.ok || data?.hasError === true) && Number(response?.status || 0) === 400) {
+                    const noIpPayload = {
+                        ...payloadBase
+                    };
+                    delete noIpPayload.ip;
+                    const retry = await requestSunizeCreate(gatewayConfig, noIpPayload);
+                    response = retry?.response || response;
+                    data = retry?.data || data;
+                }
+                if (!response?.ok || data?.hasError === true) {
+                    return {
+                        ...baseResult,
+                        detail: data?.error || data?.message || data?.details || `HTTP ${response?.status || 0}`
+                    };
+                }
+
+                const parsed = resolveSunizeCreateResponse(data || {});
+                return {
+                    ...baseResult,
+                    ok: true,
+                    txid: parsed.txid,
+                    paymentCode: parsed.paymentCode,
+                    paymentCodeBase64: parsed.paymentCodeBase64,
+                    paymentQrUrl: parsed.paymentQrUrl,
+                    statusRaw: parsed.status || '',
+                    externalId: parsed.externalId || testKey
+                };
+            }
+
+            if (!String(gatewayConfig.baseUrl || '').trim() || !String(gatewayConfig.apiKey || '').trim()) {
+                return { ...baseResult, detail: 'Credenciais Paradise nao configuradas.' };
+            }
+
+            const payload = {
+                amount: Math.max(1, Math.round(amount * 100)),
+                description: 'Teste manual de gateway via admin',
+                reference: testKey,
+                customer: {
+                    name: baseCustomer.name,
+                    email: baseCustomer.email,
+                    document: baseCustomer.document,
+                    phone: baseCustomer.phoneDigits
+                }
+            };
+            payload.source = String(gatewayConfig.source || 'api_externa').trim() || 'api_externa';
+            if (payload.source !== 'api_externa' && String(gatewayConfig.productHash || '').trim()) {
+                payload.productHash = String(gatewayConfig.productHash).trim();
+            }
+
+            let { response, data } = await requestParadiseCreate(gatewayConfig, payload);
+            if (!response?.ok || data?.success === false || String(data?.status || '').toLowerCase() === 'error') {
+                return {
+                    ...baseResult,
+                    detail: data?.error || data?.message || `HTTP ${response?.status || 0}`
+                };
+            }
+            let parsed = resolveParadiseCreateResponse(data || {});
+            if (parsed.txid && !parsed.paymentCode && !parsed.paymentCodeBase64 && !parsed.paymentQrUrl) {
+                const quickStatus = await requestParadiseStatus({
+                    ...gatewayConfig,
+                    timeoutMs: Math.max(1200, Math.min(Number(gatewayConfig.timeoutMs || 12000), 3500))
+                }, parsed.txid).catch(() => ({ response: { ok: false }, data: {} }));
+                if (quickStatus?.response?.ok) {
+                    const hydrated = resolveParadiseCreateResponse(quickStatus.data || {});
+                    parsed = {
+                        ...parsed,
+                        paymentCode: parsed.paymentCode || hydrated.paymentCode,
+                        paymentCodeBase64: parsed.paymentCodeBase64 || hydrated.paymentCodeBase64,
+                        paymentQrUrl: parsed.paymentQrUrl || hydrated.paymentQrUrl,
+                        status: parsed.status || hydrated.status
+                    };
+                }
+            }
+
+            return {
+                ...baseResult,
+                ok: true,
+                txid: parsed.txid,
+                paymentCode: parsed.paymentCode,
+                paymentCodeBase64: parsed.paymentCodeBase64,
+                paymentQrUrl: parsed.paymentQrUrl,
+                statusRaw: parsed.status || '',
+                externalId: parsed.externalId || testKey
+            };
+        } catch (error) {
+            return {
+                ...baseResult,
+                detail: error?.message || 'request_error'
+            };
+        }
+    };
+
+    const results = await Promise.all(gateways.map((gateway) => createOne(gateway)));
+    res.status(200).json({
+        ok: true,
+        amount,
+        results
+    });
+}
+
 function classifyReconcileBucket(utmifyStatus = '') {
     const status = String(utmifyStatus || '').trim().toLowerCase();
     if (status === 'paid') return 'confirmed';
@@ -3510,6 +4020,8 @@ module.exports = async (req, res) => {
             return utmfySale(req, res);
         case 'pushcut-test':
             return pushcutTest(req, res);
+        case 'gateway-test-pix':
+            return gatewayTestPix(req, res);
         case 'pix-reconcile':
             return pixReconcile(req, res);
         case 'dispatch-process':
