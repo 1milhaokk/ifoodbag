@@ -561,9 +561,12 @@ function finishPixCreateInflight(key, entry, result, error) {
     }
     if (error) {
         try {
-            entry.reject(error);
+            entry.resolve({
+                ok: false,
+                error: error?.message || String(error)
+            });
         } catch (_error) {
-            // Ignore duplicate rejects.
+            // Ignore duplicate resolutions.
         }
         return;
     }
@@ -1142,6 +1145,10 @@ module.exports = async (req, res) => {
             } else if (gateway === 'paradise') {
                 if (!hasParadiseCredentials(gatewayConfig)) {
                     createInflightError = new Error('paradise_missing_credentials');
+                    console.error('[pix] paradise missing credentials', {
+                        hasApiKey: Boolean(String(gatewayConfig.apiKey || '').trim()),
+                        baseUrl: String(gatewayConfig.baseUrl || '').trim()
+                    });
                     return res.status(500).json({ error: 'Credenciais Paradise nao configuradas.' });
                 }
 
@@ -1190,6 +1197,14 @@ module.exports = async (req, res) => {
                 ({ response, data } = await requestParadiseCreate(gatewayConfig, paradisePayload));
                 if (!response?.ok || data?.success === false || String(data?.status || '').toLowerCase() === 'error') {
                     createInflightError = new Error('paradise_create_failed');
+                    console.error('[pix] paradise create failed', {
+                        status: Number(response?.status || 0),
+                        detail: data?.error || data?.message || data?.status || '',
+                        reference: externalId,
+                        hasProductHash: Boolean(String(paradisePayload.productHash || '').trim()),
+                        source: String(paradisePayload.source || '').trim(),
+                        hasTracking: Boolean(paradisePayload.tracking && Object.keys(paradisePayload.tracking).length)
+                    });
                     return res.status(response?.status || 502).json({
                         error: 'Falha ao gerar o PIX.',
                         detail: data

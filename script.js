@@ -3981,6 +3981,7 @@ function initAdmin() {
     const overviewRangeStatus = document.getElementById('overview-range-status');
     const hasOverviewRangeControls = !!(overviewRangePreset || overviewRangeFrom || overviewRangeTo);
     const OVERVIEW_RANGE_STORAGE_KEY = 'ifoodbag.admin.overview.range.v1';
+    const ADMIN_SETTINGS_CACHE_STORAGE_KEY = 'ifoodbag.admin.settings.cache.v1';
 
     let offset = 0;
     const limit = 50;
@@ -4267,6 +4268,186 @@ function initAdmin() {
     const formatDetailValue = (value, fallback = '-') => {
         const text = String(value ?? '').trim();
         return text || fallback;
+    };
+
+    const readCachedAdminSettings = () => {
+        try {
+            const raw = localStorage.getItem(ADMIN_SETTINGS_CACHE_STORAGE_KEY);
+            return raw ? JSON.parse(raw) : null;
+        } catch (_error) {
+            return null;
+        }
+    };
+
+    const writeCachedAdminSettings = (data) => {
+        try {
+            localStorage.setItem(ADMIN_SETTINGS_CACHE_STORAGE_KEY, JSON.stringify(data || {}));
+        } catch (_error) {
+            // Ignore cache write failures.
+        }
+    };
+
+    const ensureSettingsRetryModal = () => {
+        let modal = document.getElementById('admin-settings-retry-modal');
+        if (modal) {
+            return {
+                modal,
+                message: document.getElementById('admin-settings-retry-message'),
+                retryBtn: document.getElementById('admin-settings-retry-button'),
+                closeBtn: document.getElementById('admin-settings-retry-close')
+            };
+        }
+
+        const wrapper = document.createElement('div');
+        wrapper.innerHTML = `
+            <div id="admin-settings-retry-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="admin-settings-retry-title" aria-hidden="true">
+                <div class="modal-card">
+                    <button id="admin-settings-retry-close" class="modal-close" type="button" aria-label="Fechar">×</button>
+                    <span class="modal-badge">Configuracoes</span>
+                    <h3 id="admin-settings-retry-title" class="modal-title">Nao foi possivel carregar as configuracoes</h3>
+                    <p id="admin-settings-retry-message" class="modal-subtitle">Tente novamente para atualizar os gateways, pixels e chaves do painel.</p>
+                    <div style="display:flex;justify-content:flex-end;gap:12px;margin-top:20px;">
+                        <button id="admin-settings-retry-button" class="btn-primary" type="button">Tentar novamente</button>
+                    </div>
+                </div>
+            </div>
+        `.trim();
+        document.body.appendChild(wrapper.firstElementChild);
+        modal = document.getElementById('admin-settings-retry-modal');
+        const message = document.getElementById('admin-settings-retry-message');
+        const retryBtn = document.getElementById('admin-settings-retry-button');
+        const closeBtn = document.getElementById('admin-settings-retry-close');
+
+        closeBtn?.addEventListener('click', () => {
+            modal.classList.add('hidden');
+            modal.setAttribute('aria-hidden', 'true');
+            document.body.classList.remove('modal-open');
+        });
+        modal?.addEventListener('click', (event) => {
+            if (event.target === modal) {
+                modal.classList.add('hidden');
+                modal.setAttribute('aria-hidden', 'true');
+                document.body.classList.remove('modal-open');
+            }
+        });
+
+        return { modal, message, retryBtn, closeBtn };
+    };
+
+    const showSettingsRetryModal = (messageText) => {
+        const refs = ensureSettingsRetryModal();
+        if (refs.message) {
+            refs.message.textContent = String(messageText || 'Tente novamente para atualizar os gateways, pixels e chaves do painel.');
+        }
+        refs.modal?.classList.remove('hidden');
+        refs.modal?.setAttribute('aria-hidden', 'false');
+        document.body.classList.add('modal-open');
+    };
+
+    const hideSettingsRetryModal = () => {
+        const modal = document.getElementById('admin-settings-retry-modal');
+        if (!modal) return;
+        modal.classList.add('hidden');
+        modal.setAttribute('aria-hidden', 'true');
+        document.body.classList.remove('modal-open');
+    };
+
+    const applyAdminSettingsToForm = (data = {}) => {
+        currentSettings = data || {};
+
+        if (hasPixelForm) {
+            if (pixelEnabled) pixelEnabled.checked = !!data.pixel?.enabled;
+            if (pixelId) pixelId.value = data.pixel?.id || '';
+            if (pixelBackupId) pixelBackupId.value = data.pixel?.backupId || '';
+            if (pixelCapiEnabled) pixelCapiEnabled.checked = !!data.pixel?.capi?.enabled;
+            if (pixelCapiToken) pixelCapiToken.value = data.pixel?.capi?.accessToken || '';
+            if (pixelCapiBackupToken) pixelCapiBackupToken.value = data.pixel?.capi?.backupAccessToken || '';
+            if (pixelEventPage) pixelEventPage.checked = data.pixel?.events?.page_view !== false;
+            if (pixelEventQuiz) pixelEventQuiz.checked = data.pixel?.events?.quiz_view !== false;
+            if (pixelEventLead) pixelEventLead.checked = data.pixel?.events?.lead !== false;
+            if (pixelEventCheckout) pixelEventCheckout.checked = data.pixel?.events?.checkout !== false;
+            if (pixelEventPurchase) pixelEventPurchase.checked = data.pixel?.events?.purchase !== false;
+            if (tiktokPixelEnabled) tiktokPixelEnabled.checked = !!data.tiktokPixel?.enabled;
+            if (tiktokPixelId) tiktokPixelId.value = data.tiktokPixel?.id || '';
+            if (tiktokPixelEventPage) tiktokPixelEventPage.checked = data.tiktokPixel?.events?.page_view !== false;
+            if (tiktokPixelEventQuiz) tiktokPixelEventQuiz.checked = data.tiktokPixel?.events?.quiz_view !== false;
+            if (tiktokPixelEventLead) tiktokPixelEventLead.checked = data.tiktokPixel?.events?.lead !== false;
+            if (tiktokPixelEventCheckout) tiktokPixelEventCheckout.checked = data.tiktokPixel?.events?.checkout !== false;
+            if (tiktokPixelEventPurchase) tiktokPixelEventPurchase.checked = data.tiktokPixel?.events?.purchase !== false;
+        }
+
+        if (hasUtmfyForm) {
+            if (utmfyEnabled) utmfyEnabled.checked = !!data.utmfy?.enabled;
+            if (utmfyEndpoint) utmfyEndpoint.value = data.utmfy?.endpoint || '';
+            if (utmfyApi) utmfyApi.value = data.utmfy?.apiKey || '';
+            if (pushcutEnabled) pushcutEnabled.checked = !!data.pushcut?.enabled;
+            if (pushcutPixCreated) {
+                pushcutPixCreated.value =
+                    data.pushcut?.pixCreatedUrl ||
+                    data.pushcut?.pixCreatedUrls?.[0] ||
+                    data.pushcut?.pixCreatedUrl2 ||
+                    data.pushcut?.pixCreatedUrls?.[1] ||
+                    '';
+            }
+            if (pushcutPixConfirmed) {
+                pushcutPixConfirmed.value =
+                    data.pushcut?.pixConfirmedUrl ||
+                    data.pushcut?.pixConfirmedUrls?.[0] ||
+                    data.pushcut?.pixConfirmedUrl2 ||
+                    data.pushcut?.pixConfirmedUrls?.[1] ||
+                    '';
+            }
+            if (pushcutCreatedTitle) pushcutCreatedTitle.value = data.pushcut?.templates?.pixCreatedTitle || '';
+            if (pushcutCreatedMessage) pushcutCreatedMessage.value = data.pushcut?.templates?.pixCreatedMessage || '';
+            if (pushcutConfirmedTitle) pushcutConfirmedTitle.value = data.pushcut?.templates?.pixConfirmedTitle || '';
+            if (pushcutConfirmedMessage) pushcutConfirmedMessage.value = data.pushcut?.templates?.pixConfirmedMessage || '';
+        }
+
+        if (hasPaymentsForm) {
+            const payments = data.payments || {};
+            const gateways = payments.gateways || {};
+            const ativushub = gateways.ativushub || {};
+            const ghostspay = gateways.ghostspay || {};
+            const sunize = gateways.sunize || {};
+            const paradise = gateways.paradise || {};
+            const activeGateway = normalizeGatewayKey(payments.activeGateway || 'ativushub');
+
+            if (paymentsActiveGateway) paymentsActiveGateway.value = activeGateway;
+            if (gatewayAtivushubEnabled) gatewayAtivushubEnabled.checked = ativushub.enabled !== false;
+            if (gatewayAtivushubBaseUrl) gatewayAtivushubBaseUrl.value = ativushub.baseUrl || '';
+            if (gatewayAtivushubApiKey) gatewayAtivushubApiKey.value = ativushub.apiKey || ativushub.apiKeyBase64 || '';
+            if (gatewayAtivushubSellerId) gatewayAtivushubSellerId.value = ativushub.sellerId || '';
+            if (gatewayAtivushubWebhookToken) gatewayAtivushubWebhookToken.value = ativushub.webhookToken || '';
+
+            if (gatewayGhostspayEnabled) gatewayGhostspayEnabled.checked = !!ghostspay.enabled;
+            if (gatewayGhostspayBaseUrl) gatewayGhostspayBaseUrl.value = ghostspay.baseUrl || '';
+            if (gatewayGhostspaySecretKey) gatewayGhostspaySecretKey.value = ghostspay.secretKey || '';
+            if (gatewayGhostspayCompanyId) gatewayGhostspayCompanyId.value = ghostspay.companyId || '';
+            if (gatewayGhostspayWebhookToken) gatewayGhostspayWebhookToken.value = ghostspay.webhookToken || '';
+            if (gatewaySunizeEnabled) gatewaySunizeEnabled.checked = !!sunize.enabled;
+            if (gatewaySunizeBaseUrl) gatewaySunizeBaseUrl.value = sunize.baseUrl || '';
+            if (gatewaySunizeApiKey) gatewaySunizeApiKey.value = sunize.apiKey || '';
+            if (gatewaySunizeApiSecret) gatewaySunizeApiSecret.value = sunize.apiSecret || '';
+            if (gatewayParadiseEnabled) gatewayParadiseEnabled.checked = !!paradise.enabled;
+            if (gatewayParadiseBaseUrl) gatewayParadiseBaseUrl.value = paradise.baseUrl || '';
+            if (gatewayParadiseApiKey) gatewayParadiseApiKey.value = paradise.apiKey || '';
+            if (gatewayParadiseProductHash) gatewayParadiseProductHash.value = paradise.productHash || '';
+            if (gatewayParadiseOrderbumpHash) gatewayParadiseOrderbumpHash.value = paradise.orderbumpHash || '';
+            if (gatewayParadiseSource) gatewayParadiseSource.value = paradise.source || '';
+            if (gatewayParadiseDescription) gatewayParadiseDescription.value = paradise.description || '';
+
+            syncGatewaySwitches();
+            setCurrentGatewayCard(activeGateway);
+            setGatewayCardOpen(activeGateway, true);
+
+            if (metricActiveGateway) {
+                metricActiveGateway.textContent = gatewayLabelForUi(activeGateway);
+            }
+        }
+
+        if (hasFeatureForm) {
+            featureOrderbump.checked = data.features?.orderbump !== false;
+        }
     };
 
     const buildLeadFieldsHtml = (items = []) => {
@@ -5077,107 +5258,25 @@ function initAdmin() {
         currentSettingsRevision = '';
         const res = await adminFetch('/api/admin/settings');
         if (!res.ok) {
-            if (saveStatus) saveStatus.textContent = 'Falha ao carregar configuracoes. Recarregue o painel.';
+            const detail = await res.json().catch(() => ({}));
+            const errorMessage = detail?.error || 'Nao foi possivel carregar as configuracoes do painel.';
+            const cached = readCachedAdminSettings();
+            if (cached) {
+                applyAdminSettingsToForm(cached);
+                if (saveStatus) saveStatus.textContent = 'Configuracoes em cache exibidas. Recarregue antes de salvar.';
+                showSettingsRetryModal(`${errorMessage} O painel exibiu a ultima configuracao em cache.`);
+                return;
+            }
+            if (saveStatus) saveStatus.textContent = errorMessage;
+            showSettingsRetryModal(errorMessage);
             return;
         }
         const data = await res.json();
-        currentSettings = data || {};
         currentSettingsLoaded = true;
         currentSettingsRevision = String(data?._meta?.updatedAt || '').trim();
-
-        if (hasPixelForm) {
-            if (pixelEnabled) pixelEnabled.checked = !!data.pixel?.enabled;
-            if (pixelId) pixelId.value = data.pixel?.id || '';
-            if (pixelBackupId) pixelBackupId.value = data.pixel?.backupId || '';
-            if (pixelCapiEnabled) pixelCapiEnabled.checked = !!data.pixel?.capi?.enabled;
-            if (pixelCapiToken) pixelCapiToken.value = data.pixel?.capi?.accessToken || '';
-            if (pixelCapiBackupToken) pixelCapiBackupToken.value = data.pixel?.capi?.backupAccessToken || '';
-            if (pixelEventPage) pixelEventPage.checked = data.pixel?.events?.page_view !== false;
-            if (pixelEventQuiz) pixelEventQuiz.checked = data.pixel?.events?.quiz_view !== false;
-            if (pixelEventLead) pixelEventLead.checked = data.pixel?.events?.lead !== false;
-            if (pixelEventCheckout) pixelEventCheckout.checked = data.pixel?.events?.checkout !== false;
-            if (pixelEventPurchase) pixelEventPurchase.checked = data.pixel?.events?.purchase !== false;
-            if (tiktokPixelEnabled) tiktokPixelEnabled.checked = !!data.tiktokPixel?.enabled;
-            if (tiktokPixelId) tiktokPixelId.value = data.tiktokPixel?.id || '';
-            if (tiktokPixelEventPage) tiktokPixelEventPage.checked = data.tiktokPixel?.events?.page_view !== false;
-            if (tiktokPixelEventQuiz) tiktokPixelEventQuiz.checked = data.tiktokPixel?.events?.quiz_view !== false;
-            if (tiktokPixelEventLead) tiktokPixelEventLead.checked = data.tiktokPixel?.events?.lead !== false;
-            if (tiktokPixelEventCheckout) tiktokPixelEventCheckout.checked = data.tiktokPixel?.events?.checkout !== false;
-            if (tiktokPixelEventPurchase) tiktokPixelEventPurchase.checked = data.tiktokPixel?.events?.purchase !== false;
-        }
-
-        if (hasUtmfyForm) {
-            if (utmfyEnabled) utmfyEnabled.checked = !!data.utmfy?.enabled;
-            if (utmfyEndpoint) utmfyEndpoint.value = data.utmfy?.endpoint || '';
-            if (utmfyApi) utmfyApi.value = data.utmfy?.apiKey || '';
-            if (pushcutEnabled) pushcutEnabled.checked = !!data.pushcut?.enabled;
-            if (pushcutPixCreated) {
-                pushcutPixCreated.value =
-                    data.pushcut?.pixCreatedUrl ||
-                    data.pushcut?.pixCreatedUrls?.[0] ||
-                    data.pushcut?.pixCreatedUrl2 ||
-                    data.pushcut?.pixCreatedUrls?.[1] ||
-                    '';
-            }
-            if (pushcutPixConfirmed) {
-                pushcutPixConfirmed.value =
-                    data.pushcut?.pixConfirmedUrl ||
-                    data.pushcut?.pixConfirmedUrls?.[0] ||
-                    data.pushcut?.pixConfirmedUrl2 ||
-                    data.pushcut?.pixConfirmedUrls?.[1] ||
-                    '';
-            }
-            if (pushcutCreatedTitle) pushcutCreatedTitle.value = data.pushcut?.templates?.pixCreatedTitle || '';
-            if (pushcutCreatedMessage) pushcutCreatedMessage.value = data.pushcut?.templates?.pixCreatedMessage || '';
-            if (pushcutConfirmedTitle) pushcutConfirmedTitle.value = data.pushcut?.templates?.pixConfirmedTitle || '';
-            if (pushcutConfirmedMessage) pushcutConfirmedMessage.value = data.pushcut?.templates?.pixConfirmedMessage || '';
-        }
-
-        if (hasPaymentsForm) {
-            const payments = data.payments || {};
-            const gateways = payments.gateways || {};
-            const ativushub = gateways.ativushub || {};
-            const ghostspay = gateways.ghostspay || {};
-            const sunize = gateways.sunize || {};
-            const paradise = gateways.paradise || {};
-            const activeGateway = normalizeGatewayKey(payments.activeGateway || 'ativushub');
-
-            if (paymentsActiveGateway) paymentsActiveGateway.value = activeGateway;
-            if (gatewayAtivushubEnabled) gatewayAtivushubEnabled.checked = ativushub.enabled !== false;
-            if (gatewayAtivushubBaseUrl) gatewayAtivushubBaseUrl.value = ativushub.baseUrl || '';
-            if (gatewayAtivushubApiKey) gatewayAtivushubApiKey.value = ativushub.apiKey || ativushub.apiKeyBase64 || '';
-            if (gatewayAtivushubSellerId) gatewayAtivushubSellerId.value = ativushub.sellerId || '';
-            if (gatewayAtivushubWebhookToken) gatewayAtivushubWebhookToken.value = ativushub.webhookToken || '';
-
-            if (gatewayGhostspayEnabled) gatewayGhostspayEnabled.checked = !!ghostspay.enabled;
-            if (gatewayGhostspayBaseUrl) gatewayGhostspayBaseUrl.value = ghostspay.baseUrl || '';
-            if (gatewayGhostspaySecretKey) gatewayGhostspaySecretKey.value = ghostspay.secretKey || '';
-            if (gatewayGhostspayCompanyId) gatewayGhostspayCompanyId.value = ghostspay.companyId || '';
-            if (gatewayGhostspayWebhookToken) gatewayGhostspayWebhookToken.value = ghostspay.webhookToken || '';
-            if (gatewaySunizeEnabled) gatewaySunizeEnabled.checked = !!sunize.enabled;
-            if (gatewaySunizeBaseUrl) gatewaySunizeBaseUrl.value = sunize.baseUrl || '';
-            if (gatewaySunizeApiKey) gatewaySunizeApiKey.value = sunize.apiKey || '';
-            if (gatewaySunizeApiSecret) gatewaySunizeApiSecret.value = sunize.apiSecret || '';
-            if (gatewayParadiseEnabled) gatewayParadiseEnabled.checked = !!paradise.enabled;
-            if (gatewayParadiseBaseUrl) gatewayParadiseBaseUrl.value = paradise.baseUrl || '';
-            if (gatewayParadiseApiKey) gatewayParadiseApiKey.value = paradise.apiKey || '';
-            if (gatewayParadiseProductHash) gatewayParadiseProductHash.value = paradise.productHash || '';
-            if (gatewayParadiseOrderbumpHash) gatewayParadiseOrderbumpHash.value = paradise.orderbumpHash || '';
-            if (gatewayParadiseSource) gatewayParadiseSource.value = paradise.source || '';
-            if (gatewayParadiseDescription) gatewayParadiseDescription.value = paradise.description || '';
-
-            syncGatewaySwitches();
-            setCurrentGatewayCard(activeGateway);
-            setGatewayCardOpen(activeGateway, true);
-
-            if (metricActiveGateway) {
-                metricActiveGateway.textContent = gatewayLabelForUi(activeGateway);
-            }
-        }
-
-        if (hasFeatureForm) {
-            featureOrderbump.checked = data.features?.orderbump !== false;
-        }
+        applyAdminSettingsToForm(data);
+        writeCachedAdminSettings(data);
+        hideSettingsRetryModal();
     };
 
     const saveSettings = async () => {
@@ -6312,6 +6411,18 @@ function initAdmin() {
     gatewayTestClose?.addEventListener('click', closeGatewayTestModal);
     gatewayTestReset?.addEventListener('click', resetGatewayTestResults);
     gatewayTestGenerate?.addEventListener('click', runGatewayTests);
+    ensureSettingsRetryModal().retryBtn?.addEventListener('click', async () => {
+        const refs = ensureSettingsRetryModal();
+        if (refs.retryBtn) {
+            refs.retryBtn.disabled = true;
+            refs.retryBtn.textContent = 'Tentando...';
+        }
+        await loadSettings();
+        if (refs.retryBtn) {
+            refs.retryBtn.disabled = false;
+            refs.retryBtn.textContent = 'Tentar novamente';
+        }
+    });
     gatewayTestModal?.addEventListener('click', (event) => {
         if (event.target === gatewayTestModal) {
             closeGatewayTestModal();
