@@ -7,19 +7,12 @@ const {
 } = require('../../lib/lead-store');
 const { enqueueDispatch, processDispatchQueue } = require('../../lib/dispatch-queue');
 const {
-    normalizeGatewayId
+    normalizeActiveGatewayId,
+    resolveGatewayWithFallback
 } = require('../../lib/payment-gateway-config');
 const { getPaymentsConfig } = require('../../lib/payments-config-store');
 const { getSettings } = require('../../lib/settings-store');
 const { buildPurchaseDispatchJobs } = require('../../lib/meta-capi');
-const {
-    getAtivusTxid,
-    getAtivusStatus,
-    isAtivusPaidStatus,
-    mapAtivusStatusToUtmify,
-    isAtivusRefundedStatus,
-    isAtivusRefusedStatus
-} = require('../../lib/ativus-status');
 const {
     getGhostspayTxid,
     getGhostspayStatus,
@@ -182,23 +175,6 @@ function isUpsellLead(leadData) {
     if (payload?.upsell?.enabled === true || payload?.isUpsell === true) return true;
     if (shippingId === 'expresso_1dia' || shippingId === 'taxa_iof_bag' || shippingId === 'taxa_objeto_grande_correios') return true;
     return /adiantamento|prioridade|expresso|iof|correios|objeto_grande|objeto grande/.test(shippingName);
-}
-
-function looksLikeAtivusWebhook(payload = {}) {
-    const hasTx = !!String(
-        payload?.idtransaction ||
-        payload?.idTransaction ||
-        payload?.id_transaction ||
-        payload?.externalreference ||
-        payload?.external_reference ||
-        payload?.txid ||
-        ''
-    ).trim();
-    const hasStatus = !!String(payload?.status || payload?.situacao || payload?.status_transaction || '').trim();
-    const hasActor =
-        !!String(payload?.client_name || payload?.client_document || payload?.client_email || '').trim() ||
-        !!String(payload?.beneficiaryname || payload?.beneficiarydocument || payload?.pixkey || '').trim();
-    return hasTx && hasStatus && hasActor;
 }
 
 function looksLikeGhostspayWebhook(payload = {}) {
@@ -513,108 +489,38 @@ function extractGatewayEvent(gateway, body = {}) {
         };
     }
 
-    const txid = getAtivusTxid(body);
-    const statusRaw = getAtivusStatus(body);
-    const utmifyStatus = mapAtivusStatusToUtmify(statusRaw);
-    const isPaid = isAtivusPaidStatus(statusRaw) || body.paid === true || body.isPaid === true;
-    const isRefunded = isAtivusRefundedStatus(statusRaw);
-    const isRefused = isAtivusRefusedStatus(statusRaw);
-    const amount = normalizeMoneyToBrl(
-        body?.amount ||
-        body?.valor_bruto ||
-        body?.cash_out_liquido ||
-        body?.deposito_liquido ||
-        body?.valor_liquido ||
-        0
-    );
-    const gatewayFee = normalizeMoneyToBrl(body?.taxa_deposito || 0) + normalizeMoneyToBrl(body?.taxa_adquirente || 0);
-    const userCommission = normalizeMoneyToBrl(
-        body?.deposito_liquido ||
-        body?.valor_liquido ||
-        Math.max(0, Number(amount || 0) - Number(gatewayFee || 0))
-    );
-    const sessionOrderId = String(
-        body?.externalreference ||
-        body?.external_reference ||
-        body?.metadata?.orderId ||
-        body?.orderId ||
-        ''
-    ).trim();
-    const statusChangedAt =
-        normalizeDate(body?.data_transacao) ||
-        normalizeDate(body?.data_registro) ||
-        normalizeDate(body?.dt_atualizacao) ||
-        new Date().toISOString();
-    const pixCreatedAtFromGateway =
-        normalizeDate(body?.data_registro) ||
-        normalizeDate(body?.data_transacao) ||
-        null;
-    const lastEvent = isPaid ? 'pix_confirmed' : isRefunded ? 'pix_refunded' : isRefused ? 'pix_refused' : 'pix_pending';
-
     return {
         gateway,
-        txid,
-        statusRaw,
-        utmifyStatus,
-        isPaid,
-        isRefunded,
-        isRefused,
-        amount,
-        gatewayFee,
-        userCommission,
-        sessionOrderId,
-        statusChangedAt,
-        pixCreatedAtFromGateway,
-        lastEvent,
+        txid: '',
+        statusRaw: '',
+        utmifyStatus: 'waiting_payment',
+        isPaid: false,
+        isRefunded: false,
+        isRefused: false,
+        amount: 0,
+        gatewayFee: 0,
+        userCommission: 0,
+        sessionOrderId: '',
+        statusChangedAt: new Date().toISOString(),
+        pixCreatedAtFromGateway: null,
+        lastEvent: 'pix_pending',
         webhookEventId: '',
-        fallbackIdentity: {
-            cpf: String(body?.client_document || body?.documento || '').trim(),
-            email: String(body?.client_email || body?.email || '').trim(),
-            phone: String(body?.client_phone || body?.telefone || '').trim()
-        },
-        fallbackPersonal: {
-            name: String(body?.client_name || body?.nome || '').trim(),
-            email: String(body?.client_email || body?.email || '').trim(),
-            cpf: String(body?.client_document || body?.documento || '').trim(),
-            phone: String(body?.client_phone || body?.telefone || '').trim()
-        },
-        fallbackAddress: {
-            street: '',
-            neighborhood: '',
-            city: '',
-            state: '',
-            cep: ''
-        },
-        fallbackUtm: {
-            ...(asObject(body?.checkout) || {}),
-            ...(asObject(body?.utm) || {})
-        }
+        fallbackIdentity: { cpf: '', email: '', phone: '' },
+        fallbackPersonal: { name: '', email: '', cpf: '', phone: '' },
+        fallbackAddress: { street: '', neighborhood: '', city: '', state: '', cep: '' },
+        fallbackUtm: {}
     };
 }
 
 function resolveWebhookGateway(query = {}, body = {}, payments = {}) {
-    const ativushubEnabled = payments?.gateways?.ativushub?.enabled !== false;
-    const ghostspayEnabled = payments?.gateways?.ghostspay?.enabled === true;
-    const sunizeEnabled = payments?.gateways?.sunize?.enabled === true;
-    const paradiseEnabled = payments?.gateways?.paradise?.enabled === true;
-    const requested = normalizeGatewayId(query.gateway || query.provider || body.gateway || body.provider);
-    if (requested === 'sunize' && sunizeEnabled) return 'sunize';
-    if (requested === 'ghostspay' && ghostspayEnabled) return 'ghostspay';
-    if (requested === 'paradise' && paradiseEnabled) return 'paradise';
-    if (looksLikeParadiseWebhook(body) && paradiseEnabled) return 'paradise';
-    if (looksLikeSunizeWebhook(body) && sunizeEnabled) return 'sunize';
-    if (looksLikeGhostspayWebhook(body) && ghostspayEnabled) return 'ghostspay';
-    if (looksLikeAtivusWebhook(body)) return 'ativushub';
-
-    const active = normalizeGatewayId(payments.activeGateway || 'ativushub');
-    if (active === 'ghostspay' && ghostspayEnabled) return 'ghostspay';
-    if (active === 'sunize' && sunizeEnabled) return 'sunize';
-    if (active === 'paradise' && paradiseEnabled) return 'paradise';
-    if (active === 'ativushub' && ativushubEnabled) return 'ativushub';
-    if (ghostspayEnabled) return 'ghostspay';
-    if (sunizeEnabled) return 'sunize';
-    if (paradiseEnabled) return 'paradise';
-    return 'ativushub';
+    const requestedRaw = String(query.gateway || query.provider || body.gateway || body.provider || '').trim();
+    if (looksLikeParadiseWebhook(body)) return 'paradise';
+    if (looksLikeSunizeWebhook(body)) return 'sunize';
+    if (looksLikeGhostspayWebhook(body)) return 'ghostspay';
+    if (requestedRaw) {
+        return normalizeActiveGatewayId(requestedRaw, payments.activeGateway);
+    }
+    return resolveGatewayWithFallback(payments.activeGateway, payments);
 }
 
 module.exports = async (req, res) => {
@@ -638,13 +544,12 @@ module.exports = async (req, res) => {
     const headerToken = String(req.headers?.['x-webhook-token'] || '').trim();
     const expectedToken = String(gatewayConfig.webhookToken || '').trim();
     const tokenRequired = gatewayConfig.webhookTokenRequired !== false;
-    const fallbackAllowed = gateway === 'ativushub' && gatewayConfig.webhookAllowFallback === true;
     const tokenOk = !tokenRequired
         ? true
         : expectedToken
-        ? ((token && token === expectedToken) || (headerToken && headerToken === expectedToken))
-        : true;
-    if (!tokenOk && !(fallbackAllowed && looksLikeAtivusWebhook(body))) {
+            ? ((token && token === expectedToken) || (headerToken && headerToken === expectedToken))
+            : true;
+    if (!tokenOk) {
         res.status(401).json({ status: 'unauthorized' });
         return;
     }

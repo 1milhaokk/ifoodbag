@@ -11,7 +11,6 @@ const {
 const { sendUtmfy } = require('../../lib/utmfy');
 const { updateLeadByPixTxid, getLeadByPixTxid, updateLeadBySessionId, getLeadBySessionId } = require('../../lib/lead-store');
 const { sendPushcut } = require('../../lib/pushcut');
-const { requestTransactionStatus: requestAtivushubStatus } = require('../../lib/ativushub-provider');
 const {
     requestCreateTransaction: requestGhostspayCreate,
     requestTransactionById: requestGhostspayStatus
@@ -24,14 +23,6 @@ const {
     requestCreateTransaction: requestParadiseCreate,
     requestTransactionById: requestParadiseStatus
 } = require('../../lib/paradise-provider');
-const {
-    getAtivusStatus,
-    isAtivusPaidStatus,
-    isAtivusPendingStatus,
-    isAtivusRefundedStatus,
-    isAtivusRefusedStatus,
-    mapAtivusStatusToUtmify
-} = require('../../lib/ativus-status');
 const {
     getGhostspayStatus,
     getGhostspayUpdatedAt,
@@ -779,18 +770,11 @@ function sanitizeSettingsForAdmin(settingsData = {}) {
     payload.utmfy = payload.utmfy || {};
     payload.payments = payload.payments || {};
     payload.payments.gateways = payload.payments.gateways || {};
-    payload.payments.gateways.ativushub = payload.payments.gateways.ativushub || {};
     payload.payments.gateways.ghostspay = payload.payments.gateways.ghostspay || {};
     payload.payments.gateways.sunize = payload.payments.gateways.sunize || {};
     payload.payments.gateways.paradise = payload.payments.gateways.paradise || {};
 
     payload.utmfy.apiKey = maskSecret(payload.utmfy.apiKey);
-
-    payload.payments.gateways.ativushub.apiKey = maskSecret(
-        payload.payments.gateways.ativushub.apiKey || payload.payments.gateways.ativushub.apiKeyBase64
-    );
-    payload.payments.gateways.ativushub.apiKeyBase64 = '';
-    payload.payments.gateways.ativushub.webhookToken = maskSecret(payload.payments.gateways.ativushub.webhookToken);
 
     payload.payments.gateways.ghostspay.secretKey = maskSecret(payload.payments.gateways.ghostspay.secretKey);
     payload.payments.gateways.ghostspay.basicAuthBase64 = '';
@@ -875,13 +859,14 @@ function resolveLeadGateway(row, payload) {
         ...asObject(payload),
         gateway: row?.gateway,
         provider: row?.provider
-    }, 'ativushub');
+    }, '');
 }
 
 function gatewayLabel(gateway) {
     if (gateway === 'paradise') return 'Paradise';
     if (gateway === 'sunize') return 'Sunize';
-    return gateway === 'ghostspay' ? 'GhostsPay' : 'AtivusHUB';
+    if (gateway === 'ghostspay') return 'GhostsPay';
+    return gateway === 'ativushub' ? 'AtivusHUB (legado)' : 'Gateway legado';
 }
 
 function gatewayConversionPercent(stats = {}) {
@@ -2049,16 +2034,6 @@ async function getLeads(req, res) {
         pending: 0,
         lastUpdated: null,
         gatewayStats: {
-            ativushub: {
-                gateway: 'ativushub',
-                label: gatewayLabel('ativushub'),
-                leads: 0,
-                pix: 0,
-                paid: 0,
-                refunded: 0,
-                refused: 0,
-                pending: 0
-            },
             ghostspay: {
                 gateway: 'ghostspay',
                 label: gatewayLabel('ghostspay'),
@@ -2133,30 +2108,30 @@ async function getLeads(req, res) {
                     ? 'sunize'
                     : mapped.gateway === 'paradise'
                         ? 'paradise'
-                    : 'ativushub';
-            const gatewaySummary = summary.gatewayStats[gateway];
+                        : '';
+            const gatewaySummary = gateway ? summary.gatewayStats[gateway] : null;
             summary.total += 1;
-            gatewaySummary.leads += 1;
+            if (gatewaySummary) gatewaySummary.leads += 1;
             if (String(row?.cep || '').trim() && String(row?.cep || '').trim() !== '-') summary.cep += 1;
             if (String(row?.shipping_name || '').trim() && String(row?.shipping_name || '').trim() !== '-') summary.frete += 1;
             if (String(row?.pix_txid || '').trim() && String(row?.pix_txid || '').trim() !== '-') {
                 summary.pix += 1;
-                gatewaySummary.pix += 1;
+                if (gatewaySummary) gatewaySummary.pix += 1;
             }
 
             const ev = String(mapped?.evento || '').toLowerCase().trim();
             if (mapped?.is_paid || ev === 'pix_confirmed') {
                 summary.paid += 1;
-                gatewaySummary.paid += 1;
+                if (gatewaySummary) gatewaySummary.paid += 1;
             } else if (ev === 'pix_refunded') {
                 summary.refunded += 1;
-                gatewaySummary.refunded += 1;
+                if (gatewaySummary) gatewaySummary.refunded += 1;
             } else if (ev === 'pix_refused') {
                 summary.refused += 1;
-                gatewaySummary.refused += 1;
+                if (gatewaySummary) gatewaySummary.refused += 1;
             } else if (ev === 'pix_pending' || ev === 'pix_created') {
                 summary.pending += 1;
-                gatewaySummary.pending += 1;
+                if (gatewaySummary) gatewaySummary.pending += 1;
             }
 
             const eventTime = mapped?.event_time || row?.updated_at || null;
@@ -2172,11 +2147,6 @@ async function getLeads(req, res) {
     }
 
     summary.gatewayStats = summary.gatewayStats || {};
-    summary.gatewayStats.ativushub = {
-        gateway: 'ativushub',
-        label: gatewayLabel('ativushub'),
-        ...(summary.gatewayStats.ativushub || { leads: 0, pix: 0, paid: 0, refunded: 0, refused: 0, pending: 0 })
-    };
     summary.gatewayStats.ghostspay = {
         gateway: 'ghostspay',
         label: gatewayLabel('ghostspay'),
@@ -2192,7 +2162,6 @@ async function getLeads(req, res) {
         label: gatewayLabel('paradise'),
         ...(summary.gatewayStats.paradise || { leads: 0, pix: 0, paid: 0, refunded: 0, refused: 0, pending: 0 })
     };
-    summary.gatewayStats.ativushub.conversion = gatewayConversionPercent(summary.gatewayStats.ativushub);
     summary.gatewayStats.ghostspay.conversion = gatewayConversionPercent(summary.gatewayStats.ghostspay);
     summary.gatewayStats.sunize.conversion = gatewayConversionPercent(summary.gatewayStats.sunize);
     summary.gatewayStats.paradise.conversion = gatewayConversionPercent(summary.gatewayStats.paradise);
@@ -2289,8 +2258,8 @@ async function getLeadDetail(req, res, sessionIdParam = '') {
             summary: summarizeUserAgent(userAgent)
         },
         payment: {
-            gateway: readable?.gateway || 'ativushub',
-            gatewayLabel: readable?.gateway_label || gatewayLabel(readable?.gateway || 'ativushub'),
+            gateway: readable?.gateway || '-',
+            gatewayLabel: readable?.gateway_label || gatewayLabel(readable?.gateway || ''),
             status: readable?.status_funil || '-',
             event: readable?.evento || '-',
             pixTxid: resolveLeadCurrentPixTxid(lead, payload),
@@ -2825,9 +2794,6 @@ async function settings(req, res) {
         const bodyGateways = bodyPayments.gateways && typeof bodyPayments.gateways === 'object'
             ? bodyPayments.gateways
             : {};
-        const bodyAtivus = bodyGateways.ativushub && typeof bodyGateways.ativushub === 'object'
-            ? bodyGateways.ativushub
-            : {};
         const bodyGhost = bodyGateways.ghostspay && typeof bodyGateways.ghostspay === 'object'
             ? bodyGateways.ghostspay
             : {};
@@ -2837,7 +2803,6 @@ async function settings(req, res) {
         const bodyParadise = bodyGateways.paradise && typeof bodyGateways.paradise === 'object'
             ? bodyGateways.paradise
             : {};
-        const currentAtivusGateway = currentPayments?.gateways?.ativushub || {};
         const currentGhostGateway = currentPayments?.gateways?.ghostspay || {};
         const currentSunizeGateway = currentPayments?.gateways?.sunize || {};
         const currentParadiseGateway = currentPayments?.gateways?.paradise || {};
@@ -2845,15 +2810,6 @@ async function settings(req, res) {
             ...(bodyPayments || {}),
             gateways: {
                 ...(bodyGateways || {}),
-                ativushub: {
-                    ...bodyAtivus,
-                    apiKey: pickSecretInput(bodyAtivus.apiKey, currentAtivusGateway.apiKey || currentAtivusGateway.apiKeyBase64 || ''),
-                    apiKeyBase64: pickSecretInput(bodyAtivus.apiKeyBase64, currentAtivusGateway.apiKeyBase64 || ''),
-                    webhookToken: pickSecretInput(bodyAtivus.webhookToken, currentAtivusGateway.webhookToken || ''),
-                    webhookTokenRequired: bodyAtivus.webhookTokenRequired !== undefined
-                        ? !!bodyAtivus.webhookTokenRequired
-                        : currentAtivusGateway.webhookTokenRequired !== false
-                },
                 ghostspay: {
                     ...bodyGhost,
                     secretKey: pickSecretInput(bodyGhost.secretKey, currentGhostGateway.secretKey || ''),
@@ -3394,7 +3350,17 @@ async function inspectPixTransaction({ txid, rowGateway, sessionHint, payments }
             ? 'sunize'
             : rowGateway === 'paradise'
                 ? 'paradise'
-                : 'ativushub';
+                : '';
+
+    if (!gateway) {
+        return {
+            ok: false,
+            txid,
+            gateway: rowGateway || 'legacy',
+            responseStatus: 0,
+            detail: 'unsupported_gateway'
+        };
+    }
 
     let response;
     let data;
@@ -3419,8 +3385,7 @@ async function inspectPixTransaction({ txid, rowGateway, sessionHint, payments }
                     txid,
                     gateway,
                     responseStatus: response?.status || 0,
-                    detail: data?.error || data?.message || '',
-                    blockedByAtivus: false
+                    detail: data?.error || data?.message || ''
                 };
             }
 
@@ -3460,8 +3425,7 @@ async function inspectPixTransaction({ txid, rowGateway, sessionHint, payments }
                     txid,
                     gateway,
                     responseStatus: response?.status || 0,
-                    detail: data?.error || data?.message || '',
-                    blockedByAtivus: false
+                    detail: data?.error || data?.message || ''
                 };
             }
 
@@ -3494,11 +3458,9 @@ async function inspectPixTransaction({ txid, rowGateway, sessionHint, payments }
                     txid,
                     gateway,
                     responseStatus: response?.status || 0,
-                    detail: data?.error || data?.message || '',
-                    blockedByAtivus: false
+                    detail: data?.error || data?.message || ''
                 };
             }
-
             status = getParadiseStatus(data);
             utmifyStatus = mapParadiseStatusToUtmify(status);
             isPaid = isParadisePaidStatus(status);
@@ -3528,47 +3490,6 @@ async function inspectPixTransaction({ txid, rowGateway, sessionHint, payments }
                 0
             );
             commission = Math.max(0, Number((amount - fee).toFixed(2)));
-        } else {
-            ({ response, data } = await requestAtivushubStatus(payments?.gateways?.ativushub || {}, txid));
-            if (!response?.ok) {
-                return {
-                    ok: false,
-                    txid,
-                    gateway,
-                    responseStatus: response?.status || 0,
-                    detail: data?.error || data?.message || '',
-                    blockedByAtivus: response?.status === 403
-                };
-            }
-
-            status = getAtivusStatus(data);
-            utmifyStatus = mapAtivusStatusToUtmify(status);
-            isPaid = isAtivusPaidStatus(status);
-            isRefunded = isAtivusRefundedStatus(status);
-            isRefused = isAtivusRefusedStatus(status);
-            isPending = isAtivusPendingStatus(status);
-            changedAt =
-                toIsoDate(data?.data_transacao) ||
-                toIsoDate(data?.data_registro) ||
-                new Date().toISOString();
-            sessionIdFallback = String(
-                data?.externalreference ||
-                data?.external_reference ||
-                data?.metadata?.orderId ||
-                data?.orderId ||
-                sessionIdFallback ||
-                ''
-            ).trim();
-            amount = normalizeAmountPossiblyCents(
-                data?.amount ||
-                data?.valor_bruto ||
-                data?.valor_liquido ||
-                data?.data?.amount ||
-                0
-            );
-            fee = normalizeAmountPossiblyCents(data?.taxa_deposito || 0) +
-                normalizeAmountPossiblyCents(data?.taxa_adquirente || 0);
-            commission = normalizeAmountPossiblyCents(data?.deposito_liquido || data?.valor_liquido || 0);
         }
     } catch (_error) {
         return {
@@ -3576,8 +3497,7 @@ async function inspectPixTransaction({ txid, rowGateway, sessionHint, payments }
             txid,
             gateway,
             responseStatus: 0,
-            detail: 'request_error',
-            blockedByAtivus: false
+            detail: 'request_error'
         };
     }
 
@@ -3587,8 +3507,7 @@ async function inspectPixTransaction({ txid, rowGateway, sessionHint, payments }
             txid,
             gateway,
             responseStatus: 200,
-            detail: `status:${status || 'unknown'}`,
-            blockedByAtivus: false
+            detail: `status:${status || 'unknown'}`
         };
     }
 
@@ -3891,9 +3810,7 @@ async function pixReconcile(req, res) {
     let updated = 0;
     const failedDetails = [];
     const items = [];
-    let blockedByAtivus = 0;
     const gatewaySummary = {
-        ativushub: { checked: 0, confirmed: 0, pending: 0, refunded: 0, refused: 0, failed: 0 },
         ghostspay: { checked: 0, confirmed: 0, pending: 0, refunded: 0, refused: 0, failed: 0 },
         sunize: { checked: 0, confirmed: 0, pending: 0, refunded: 0, refused: 0, failed: 0 },
         paradise: { checked: 0, confirmed: 0, pending: 0, refunded: 0, refused: 0, failed: 0 }
@@ -3906,9 +3823,9 @@ async function pixReconcile(req, res) {
                 ? 'sunize'
                 : rowGateway === 'paradise'
                     ? 'paradise'
-                : 'ativushub';
+                    : '';
         checked += 1;
-        gatewaySummary[gateway].checked += 1;
+        if (gatewaySummary[gateway]) gatewaySummary[gateway].checked += 1;
         const result = await inspectPixTransaction({
             txid,
             rowGateway: gateway,
@@ -3917,17 +3834,16 @@ async function pixReconcile(req, res) {
         });
         if (!result?.ok) {
             failed += 1;
-            gatewaySummary[gateway].failed += 1;
-            if (result?.blockedByAtivus) blockedByAtivus += 1;
+            if (gatewaySummary[gateway]) gatewaySummary[gateway].failed += 1;
             if (failedDetails.length < 8) {
                 failedDetails.push({
                     txid,
-                    gateway,
+                    gateway: gateway || rowGateway || 'legacy',
                     status: result?.responseStatus || 0,
                     detail: result?.detail || 'request_error'
                 });
             }
-            if (isSingle) items.push({ txid, gateway, ok: false, statusCode: result?.responseStatus || 0, detail: result?.detail || 'request_error' });
+            if (isSingle) items.push({ txid, gateway: gateway || rowGateway || 'legacy', ok: false, statusCode: result?.responseStatus || 0, detail: result?.detail || 'request_error' });
             return;
         }
 
@@ -3982,10 +3898,7 @@ async function pixReconcile(req, res) {
         refunded,
         refused,
         failed,
-        blockedByAtivus,
-        warning: blockedByAtivus > 0
-            ? 'A consulta de status na Ativus foi bloqueada (403). Habilite este endpoint no suporte Ativus para reconciliacao retroativa.'
-            : null,
+        warning: null,
         includeConfirmed,
         mutate,
         updated,

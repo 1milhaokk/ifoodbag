@@ -184,14 +184,19 @@
           <p class="admin-hint">Compare em tempo real qual integracao converte mais pagamentos.</p>
           <div class="admin-kpi-grid">
             <div class="admin-kpi">
-              <span>AtivusHUB</span>
-              <strong id="metric-gateway-ativushub-conv">0%</strong>
-              <em id="metric-gateway-ativushub-detail">0 pagos / 0 PIX</em>
-            </div>
-            <div class="admin-kpi">
               <span>GhostsPay</span>
               <strong id="metric-gateway-ghostspay-conv">0%</strong>
               <em id="metric-gateway-ghostspay-detail">0 pagos / 0 PIX</em>
+            </div>
+            <div class="admin-kpi">
+              <span>Sunize</span>
+              <strong id="metric-gateway-sunize-conv">0%</strong>
+              <em id="metric-gateway-sunize-detail">0 pagos / 0 PIX</em>
+            </div>
+            <div class="admin-kpi">
+              <span>Paradise</span>
+              <strong id="metric-gateway-paradise-conv">0%</strong>
+              <em id="metric-gateway-paradise-detail">0 pagos / 0 PIX</em>
             </div>
           </div>
         </section>
@@ -219,31 +224,11 @@
           <div class="admin-grid">
             <div class="input-group">
               <select id="payments-active-gateway" class="floating-input">
-                <option value="ativushub">AtivusHUB</option>
                 <option value="ghostspay">GhostsPay</option>
+                <option value="sunize">Sunize</option>
+                <option value="paradise">Paradise</option>
               </select>
               <label for="payments-active-gateway" class="floating-label">Gateway ativo</label>
-            </div>
-
-            <label class="admin-switch">
-              <input type="checkbox" id="gateway-ativushub-enabled" />
-              <span>AtivusHUB ativo</span>
-            </label>
-            <div class="input-group">
-              <input type="text" id="gateway-ativushub-base-url" class="floating-input" placeholder=" " />
-              <label for="gateway-ativushub-base-url" class="floating-label">AtivusHUB Base URL</label>
-            </div>
-            <div class="input-group">
-              <input type="password" id="gateway-ativushub-api-key" class="floating-input" placeholder=" " />
-              <label for="gateway-ativushub-api-key" class="floating-label">AtivusHUB API Key (base64 ou raw)</label>
-            </div>
-            <div class="input-group">
-              <input type="text" id="gateway-ativushub-seller-id" class="floating-input" placeholder=" " />
-              <label for="gateway-ativushub-seller-id" class="floating-label">AtivusHUB Seller ID (opcional)</label>
-            </div>
-            <div class="input-group">
-              <input type="password" id="gateway-ativushub-webhook-token" class="floating-input" placeholder=" " />
-              <label for="gateway-ativushub-webhook-token" class="floating-label">AtivusHUB Webhook Token</label>
             </div>
 
             <label class="admin-switch">
@@ -265,6 +250,52 @@
             <div class="input-group">
               <input type="password" id="gateway-ghostspay-webhook-token" class="floating-input" placeholder=" " />
               <label for="gateway-ghostspay-webhook-token" class="floating-label">GhostsPay Webhook Token</label>
+            </div>
+
+            <label class="admin-switch">
+              <input type="checkbox" id="gateway-sunize-enabled" />
+              <span>Sunize ativo</span>
+            </label>
+            <div class="input-group">
+              <input type="text" id="gateway-sunize-base-url" class="floating-input" placeholder=" " />
+              <label for="gateway-sunize-base-url" class="floating-label">Sunize Base URL</label>
+            </div>
+            <div class="input-group">
+              <input type="password" id="gateway-sunize-api-key" class="floating-input" placeholder=" " />
+              <label for="gateway-sunize-api-key" class="floating-label">Sunize x-api-key</label>
+            </div>
+            <div class="input-group">
+              <input type="password" id="gateway-sunize-api-secret" class="floating-input" placeholder=" " />
+              <label for="gateway-sunize-api-secret" class="floating-label">Sunize x-api-secret</label>
+            </div>
+
+            <label class="admin-switch">
+              <input type="checkbox" id="gateway-paradise-enabled" />
+              <span>Paradise ativo</span>
+            </label>
+            <div class="input-group">
+              <input type="text" id="gateway-paradise-base-url" class="floating-input" placeholder=" " />
+              <label for="gateway-paradise-base-url" class="floating-label">Paradise Base URL</label>
+            </div>
+            <div class="input-group">
+              <input type="password" id="gateway-paradise-api-key" class="floating-input" placeholder=" " />
+              <label for="gateway-paradise-api-key" class="floating-label">Paradise X-API-Key</label>
+            </div>
+            <div class="input-group">
+              <input type="password" id="gateway-paradise-product-hash" class="floating-input" placeholder=" " />
+              <label for="gateway-paradise-product-hash" class="floating-label">Paradise Product Hash (opcional)</label>
+            </div>
+            <div class="input-group">
+              <input type="text" id="gateway-paradise-orderbump-hash" class="floating-input" placeholder=" " />
+              <label for="gateway-paradise-orderbump-hash" class="floating-label">Paradise Orderbump Hash (opcional)</label>
+            </div>
+            <div class="input-group">
+              <input type="text" id="gateway-paradise-source" class="floating-input" placeholder=" " />
+              <label for="gateway-paradise-source" class="floating-label">Paradise Source (padrao: api_externa)</label>
+            </div>
+            <div class="input-group">
+              <input type="text" id="gateway-paradise-description" class="floating-input" placeholder=" " />
+              <label for="gateway-paradise-description" class="floating-label">Descricao padrao do pedido (opcional)</label>
             </div>
           </div>
         </section>

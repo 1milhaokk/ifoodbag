@@ -123,11 +123,6 @@
 
           <div class="admin-kpi-grid">
             <div class="admin-kpi">
-              <span>AtivusHUB</span>
-              <strong id="metric-gateway-ativushub-conv">0%</strong>
-              <em id="metric-gateway-ativushub-detail">0 pagos / 0 PIX</em>
-            </div>
-            <div class="admin-kpi">
               <span>GhostsPay</span>
               <strong id="metric-gateway-ghostspay-conv">0%</strong>
               <em id="metric-gateway-ghostspay-detail">0 pagos / 0 PIX</em>
@@ -161,7 +156,6 @@
           <div class="gateway-top-row">
             <div class="input-group">
               <select id="payments-active-gateway" class="floating-input">
-                <option value="ativushub">AtivusHUB</option>
                 <option value="ghostspay">GhostsPay</option>
                 <option value="sunize">Sunize</option>
                 <option value="paradise">Paradise</option>
@@ -172,43 +166,6 @@
           </div>
 
           <div class="gateway-card-list">
-            <article class="gateway-card" data-gateway-card="ativushub">
-              <header class="gateway-card-header">
-                <div class="gateway-card-heading">
-                  <h3>AtivusHUB</h3>
-                  <p>Gateway principal com geracao de PIX em tempo real.</p>
-                </div>
-                <div class="gateway-card-actions">
-                  <label class="gateway-switch" for="gateway-ativushub-enabled">
-                    <input type="checkbox" id="gateway-ativushub-enabled" />
-                    <span class="gateway-switch-track" aria-hidden="true"></span>
-                    <span class="gateway-switch-text" id="gateway-ativushub-state">Ligado</span>
-                  </label>
-                  <button type="button" class="btn-secondary gateway-config-toggle" data-gateway-config-toggle="ativushub" aria-controls="gateway-config-ativushub" aria-expanded="false">Configurar</button>
-                </div>
-              </header>
-              <div id="gateway-config-ativushub" class="gateway-card-body">
-                <div class="admin-grid gateway-fields-grid">
-                  <div class="input-group">
-                    <input type="text" id="gateway-ativushub-base-url" class="floating-input" placeholder=" " />
-                    <label for="gateway-ativushub-base-url" class="floating-label">AtivusHUB Base URL</label>
-                  </div>
-                  <div class="input-group">
-                    <input type="password" id="gateway-ativushub-api-key" class="floating-input" placeholder=" " autocomplete="new-password" />
-                    <label for="gateway-ativushub-api-key" class="floating-label">AtivusHUB API Key (base64 ou raw)</label>
-                  </div>
-                  <div class="input-group">
-                    <input type="text" id="gateway-ativushub-seller-id" class="floating-input" placeholder=" " />
-                    <label for="gateway-ativushub-seller-id" class="floating-label">AtivusHUB Seller ID (opcional)</label>
-                  </div>
-                  <div class="input-group">
-                    <input type="password" id="gateway-ativushub-webhook-token" class="floating-input" placeholder=" " autocomplete="new-password" />
-                    <label for="gateway-ativushub-webhook-token" class="floating-label">AtivusHUB Webhook Token</label>
-                  </div>
-                </div>
-              </div>
-            </article>
-
             <article class="gateway-card" data-gateway-card="ghostspay">
               <header class="gateway-card-header">
                 <div class="gateway-card-heading">
@@ -323,7 +280,7 @@
               </div>
             </article>
           </div>
-          <p class="admin-hint">Webhook token: fixo em <code>dev</code> para AtivusHUB e GhostsPay. Sunize e Paradise nao exigem webhook token.</p>
+          <p class="admin-hint">Webhook token: fixo em <code>dev</code> para GhostsPay. Sunize e Paradise nao exigem webhook token.</p>
         </section>
       </div>
     </main>

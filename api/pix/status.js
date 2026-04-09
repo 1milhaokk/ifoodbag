@@ -1,5 +1,4 @@
 const { ensurePublicAccess } = require('../../lib/public-access');
-const { requestTransactionStatus: requestAtivushubStatus } = require('../../lib/ativushub-provider');
 const { requestTransactionById: requestGhostspayStatus } = require('../../lib/ghostspay-provider');
 const { requestTransactionById: requestSunizeStatus } = require('../../lib/sunize-provider');
 const {
@@ -7,17 +6,12 @@ const {
     requestTransactionByReference: requestParadiseByReference
 } = require('../../lib/paradise-provider');
 const {
+    normalizeActiveGatewayId,
     normalizeGatewayId,
+    resolveGatewayWithFallback,
     resolveGatewayFromPayload
 } = require('../../lib/payment-gateway-config');
 const { getPaymentsConfig } = require('../../lib/payments-config-store');
-const {
-    getAtivusStatus,
-    isAtivusPaidStatus,
-    isAtivusRefundedStatus,
-    isAtivusRefusedStatus,
-    mapAtivusStatusToUtmify
-} = require('../../lib/ativus-status');
 const {
     getGhostspayStatus,
     getGhostspayUpdatedAt,
@@ -292,14 +286,18 @@ function mapGatewayStatusToFrontend(gateway, statusRaw) {
     if (gateway === 'paradise') {
         return mapUtmifyStatusToFrontend(mapParadiseStatusToUtmify(statusRaw));
     }
-    return mapUtmifyStatusToFrontend(mapAtivusStatusToUtmify(statusRaw));
+    const normalized = normalizeStatus(statusRaw);
+    if (/paid|approved|confirm|complete|success/.test(normalized)) return 'paid';
+    if (/refund/.test(normalized)) return 'refunded';
+    if (/refus|fail|cancel|expired|chargeback|chargedback/.test(normalized)) return 'refused';
+    return 'waiting_payment';
 }
 
 function deriveLeadStatus(leadData, expectedTxid = '') {
-    if (!leadData) return { status: 'waiting_payment', statusRaw: '', gateway: 'ativushub' };
+    if (!leadData) return { status: 'waiting_payment', statusRaw: '', gateway: '' };
     const payload = asObject(leadData.payload);
-    const lastEvent = String(leadData.last_event || '').trim().toLowerCase();
-    const gateway = resolveGatewayFromPayload(payload, 'ativushub');
+    const lastEvent = normalizeStatus(leadData.last_event);
+    const gateway = resolveGatewayFromPayload(payload, '');
     const requestedTxid = String(expectedTxid || '').trim();
     const payloadTxid = pickText(
         leadData?.pix_txid,
@@ -365,51 +363,16 @@ function buildPatchFromGatewayStatus(leadData, txid, gateway, statusRaw, nextSta
 }
 
 function resolveStatusGateway(body = {}, leadData = null, payments = {}) {
-    const ativushubEnabled = payments?.gateways?.ativushub?.enabled !== false;
-    const ghostspayEnabled = payments?.gateways?.ghostspay?.enabled === true;
-    const sunizeEnabled = payments?.gateways?.sunize?.enabled === true;
-    const paradiseEnabled = payments?.gateways?.paradise?.enabled === true;
-    const requested = normalizeGatewayId(body.gateway || body.paymentGateway || body.provider || '');
-    if (requested === 'ghostspay' && ghostspayEnabled) {
-        return 'ghostspay';
-    }
-    if (requested === 'sunize' && sunizeEnabled) {
-        return 'sunize';
-    }
-    if (requested === 'paradise' && paradiseEnabled) {
-        return 'paradise';
-    }
-    if (requested === 'ativushub' && !ativushubEnabled && ghostspayEnabled) {
-        return 'ghostspay';
-    }
-    if (requested === 'ativushub' && !ativushubEnabled && sunizeEnabled) {
-        return 'sunize';
-    }
-    if (requested === 'ativushub' && !ativushubEnabled && paradiseEnabled) {
-        return 'paradise';
-    }
-
     const payload = asObject(leadData?.payload);
-    const fromLead = resolveGatewayFromPayload(payload, payments.activeGateway || 'ativushub');
-    if (fromLead === 'ghostspay' && ghostspayEnabled) {
-        return 'ghostspay';
+    const fromLead = resolveGatewayFromPayload(payload, '');
+    if (fromLead === 'ghostspay' || fromLead === 'sunize' || fromLead === 'paradise') {
+        return fromLead;
     }
-    if (fromLead === 'sunize' && sunizeEnabled) {
-        return 'sunize';
+    const requestedRaw = String(body.gateway || body.paymentGateway || body.provider || '').trim();
+    if (requestedRaw) {
+        return normalizeActiveGatewayId(requestedRaw, payments.activeGateway);
     }
-    if (fromLead === 'paradise' && paradiseEnabled) {
-        return 'paradise';
-    }
-    if (!ativushubEnabled && ghostspayEnabled) {
-        return 'ghostspay';
-    }
-    if (!ativushubEnabled && sunizeEnabled) {
-        return 'sunize';
-    }
-    if (!ativushubEnabled && paradiseEnabled) {
-        return 'paradise';
-    }
-    return 'ativushub';
+    return resolveGatewayWithFallback(payments.activeGateway, payments);
 }
 
 module.exports = async (req, res) => {
@@ -626,37 +589,16 @@ module.exports = async (req, res) => {
             new Date().toISOString();
         ({ paymentCode, paymentCodeBase64, paymentQrUrl } = extractPixFieldsForStatus(gateway, data));
     } else {
-        ({ response, data } = await requestAtivushubStatus(statusGatewayConfig, txid));
-        if (!response?.ok) {
-            const blockedByAtivus = Number(response?.status || 0) === 403;
-            res.status(blockedByAtivus ? 200 : 502).json({
-                ok: blockedByAtivus,
-                status: leadStatus.status || 'waiting_payment',
-                statusRaw: leadStatus.statusRaw || '',
-                txid,
-                gateway,
-                source: 'database_fallback',
-                blockedByAtivus,
-                detail: data?.error || data?.message || ''
-            });
-            return;
-        }
-
-        statusRaw = getAtivusStatus(data);
-        const mapped = mapAtivusStatusToUtmify(statusRaw);
-        nextStatus = isAtivusPaidStatus(statusRaw)
-            ? 'paid'
-            : isAtivusRefundedStatus(statusRaw)
-                ? 'refunded'
-                : isAtivusRefusedStatus(statusRaw)
-                    ? 'refused'
-                    : mapUtmifyStatusToFrontend(mapped);
-        changedAtIso =
-            toIsoDate(data?.data_transacao) ||
-            toIsoDate(data?.data_registro) ||
-            toIsoDate(data?.dt_atualizacao) ||
-            new Date().toISOString();
-        ({ paymentCode, paymentCodeBase64, paymentQrUrl } = extractPixFieldsForStatus(gateway, data));
+        res.status(503).json({
+            ok: false,
+            status: leadStatus.status || 'waiting_payment',
+            statusRaw: leadStatus.statusRaw || '',
+            txid,
+            gateway,
+            source: 'gateway_unavailable',
+            detail: 'gateway_not_supported'
+        });
+        return;
     }
 
     let leadUpdated = false;
@@ -769,8 +711,6 @@ module.exports = async (req, res) => {
                 data?.data?.gatewayFee ||
                 0
             );
-        } else if (gateway === 'ativushub') {
-            gatewayFee = normalizeMoneyToBrl(data?.taxa_deposito || 0) + normalizeMoneyToBrl(data?.taxa_adquirente || 0);
         }
         const userCommission = Math.max(
             0,

@@ -3828,11 +3828,6 @@ function initAdmin() {
     let pushcutConfirmedTitle = document.getElementById('pushcut-confirmed-title');
     let pushcutConfirmedMessage = document.getElementById('pushcut-confirmed-message');
     const paymentsActiveGateway = document.getElementById('payments-active-gateway');
-    const gatewayAtivushubEnabled = document.getElementById('gateway-ativushub-enabled');
-    const gatewayAtivushubBaseUrl = document.getElementById('gateway-ativushub-base-url');
-    const gatewayAtivushubApiKey = document.getElementById('gateway-ativushub-api-key');
-    const gatewayAtivushubSellerId = document.getElementById('gateway-ativushub-seller-id');
-    const gatewayAtivushubWebhookToken = document.getElementById('gateway-ativushub-webhook-token');
     const gatewayGhostspayEnabled = document.getElementById('gateway-ghostspay-enabled');
     const gatewayGhostspayBaseUrl = document.getElementById('gateway-ghostspay-base-url');
     const gatewayGhostspaySecretKey = document.getElementById('gateway-ghostspay-secret-key');
@@ -3849,7 +3844,6 @@ function initAdmin() {
     const gatewayParadiseOrderbumpHash = document.getElementById('gateway-paradise-orderbump-hash');
     const gatewayParadiseSource = document.getElementById('gateway-paradise-source');
     const gatewayParadiseDescription = document.getElementById('gateway-paradise-description');
-    const gatewayAtivushubState = document.getElementById('gateway-ativushub-state');
     const gatewayGhostspayState = document.getElementById('gateway-ghostspay-state');
     const gatewaySunizeState = document.getElementById('gateway-sunize-state');
     const gatewayParadiseState = document.getElementById('gateway-paradise-state');
@@ -3918,8 +3912,6 @@ function initAdmin() {
     const metricConvCep = document.getElementById('metric-conv-cep');
     const metricActiveGateway = document.getElementById('metric-active-gateway');
     const metricBestGateway = document.getElementById('metric-best-gateway');
-    const metricGatewayAtivushubConv = document.getElementById('metric-gateway-ativushub-conv');
-    const metricGatewayAtivushubDetail = document.getElementById('metric-gateway-ativushub-detail');
     const metricGatewayGhostspayConv = document.getElementById('metric-gateway-ghostspay-conv');
     const metricGatewayGhostspayDetail = document.getElementById('metric-gateway-ghostspay-detail');
     const metricGatewaySunizeConv = document.getElementById('metric-gateway-sunize-conv');
@@ -3995,7 +3987,6 @@ function initAdmin() {
         lastUpdated: '',
         funnel: null,
         gatewayStats: {
-            ativushub: { leads: 0, pix: 0, paid: 0, refunded: 0, refused: 0, pending: 0 },
             ghostspay: { leads: 0, pix: 0, paid: 0, refunded: 0, refused: 0, pending: 0 },
             sunize: { leads: 0, pix: 0, paid: 0, refunded: 0, refused: 0, pending: 0 },
             paradise: { leads: 0, pix: 0, paid: 0, refunded: 0, refused: 0, pending: 0 }
@@ -4147,11 +4138,6 @@ function initAdmin() {
     );
     const hasPaymentsForm = !!(
         paymentsActiveGateway ||
-        gatewayAtivushubEnabled ||
-        gatewayAtivushubBaseUrl ||
-        gatewayAtivushubApiKey ||
-        gatewayAtivushubSellerId ||
-        gatewayAtivushubWebhookToken ||
         gatewayGhostspayEnabled ||
         gatewayGhostspayBaseUrl ||
         gatewayGhostspaySecretKey ||
@@ -4180,7 +4166,15 @@ function initAdmin() {
         if (normalized === 'ghostspay') return 'ghostspay';
         if (normalized === 'sunize') return 'sunize';
         if (normalized === 'paradise') return 'paradise';
-        return 'ativushub';
+        return 'ghostspay';
+    };
+
+    const resolveGatewayMetricKey = (value) => {
+        const normalized = String(value || '').trim().toLowerCase();
+        if (normalized === 'ghostspay') return 'ghostspay';
+        if (normalized === 'sunize') return 'sunize';
+        if (normalized === 'paradise') return 'paradise';
+        return '';
     };
 
     const gatewayLabelForUi = (gateway) => {
@@ -4188,7 +4182,7 @@ function initAdmin() {
         if (normalized === 'ghostspay') return 'GhostsPay';
         if (normalized === 'sunize') return 'Sunize';
         if (normalized === 'paradise') return 'Paradise';
-        return 'AtivusHUB';
+        return 'GhostsPay';
     };
 
     const formatPercent = (value) => {
@@ -4209,7 +4203,6 @@ function initAdmin() {
     };
 
     const syncGatewaySwitches = () => {
-        syncGatewaySwitchState(gatewayAtivushubEnabled, gatewayAtivushubState);
         syncGatewaySwitchState(gatewayGhostspayEnabled, gatewayGhostspayState);
         syncGatewaySwitchState(gatewaySunizeEnabled, gatewaySunizeState);
         syncGatewaySwitchState(gatewayParadiseEnabled, gatewayParadiseState);
@@ -4406,19 +4399,12 @@ function initAdmin() {
         if (hasPaymentsForm) {
             const payments = data.payments || {};
             const gateways = payments.gateways || {};
-            const ativushub = gateways.ativushub || {};
             const ghostspay = gateways.ghostspay || {};
             const sunize = gateways.sunize || {};
             const paradise = gateways.paradise || {};
-            const activeGateway = normalizeGatewayKey(payments.activeGateway || 'ativushub');
+            const activeGateway = normalizeGatewayKey(payments.activeGateway || 'ghostspay');
 
             if (paymentsActiveGateway) paymentsActiveGateway.value = activeGateway;
-            if (gatewayAtivushubEnabled) gatewayAtivushubEnabled.checked = ativushub.enabled !== false;
-            if (gatewayAtivushubBaseUrl) gatewayAtivushubBaseUrl.value = ativushub.baseUrl || '';
-            if (gatewayAtivushubApiKey) gatewayAtivushubApiKey.value = ativushub.apiKey || ativushub.apiKeyBase64 || '';
-            if (gatewayAtivushubSellerId) gatewayAtivushubSellerId.value = ativushub.sellerId || '';
-            if (gatewayAtivushubWebhookToken) gatewayAtivushubWebhookToken.value = ativushub.webhookToken || '';
-
             if (gatewayGhostspayEnabled) gatewayGhostspayEnabled.checked = !!ghostspay.enabled;
             if (gatewayGhostspayBaseUrl) gatewayGhostspayBaseUrl.value = ghostspay.baseUrl || '';
             if (gatewayGhostspaySecretKey) gatewayGhostspaySecretKey.value = ghostspay.secretKey || '';
@@ -5363,20 +5349,12 @@ function initAdmin() {
         }
 
         if (hasPaymentsForm) {
-            const activeGateway = normalizeGatewayKey(paymentsActiveGateway?.value || 'ativushub');
+            const activeGateway = normalizeGatewayKey(paymentsActiveGateway?.value || 'ghostspay');
             payload.payments = {
                 ...(currentSettings?.payments || {}),
                 activeGateway,
                 gateways: {
                     ...(currentSettings?.payments?.gateways || {}),
-                    ativushub: {
-                        ...(currentSettings?.payments?.gateways?.ativushub || {}),
-                        enabled: gatewayAtivushubEnabled?.checked !== false,
-                        baseUrl: gatewayAtivushubBaseUrl?.value?.trim() || '',
-                        apiKey: gatewayAtivushubApiKey?.value?.trim() || '',
-                        sellerId: gatewayAtivushubSellerId?.value?.trim() || '',
-                        webhookToken: gatewayAtivushubWebhookToken?.value?.trim() || ''
-                    },
                     ghostspay: {
                         ...(currentSettings?.payments?.gateways?.ghostspay || {}),
                         enabled: !!gatewayGhostspayEnabled?.checked,
@@ -5433,7 +5411,7 @@ function initAdmin() {
             await loadSettings();
         }
         if (res.ok && hasPaymentsForm) {
-            const activeGateway = normalizeGatewayKey(paymentsActiveGateway?.value || 'ativushub');
+            const activeGateway = normalizeGatewayKey(paymentsActiveGateway?.value || 'ghostspay');
             setCurrentGatewayCard(activeGateway);
             syncGatewaySwitches();
             if (metricActiveGateway) {
@@ -5841,7 +5819,6 @@ function initAdmin() {
 
     const updateMetrics = (rows, reset = false, summary = null) => {
         const emptyGatewayStats = () => ({
-            ativushub: { leads: 0, pix: 0, paid: 0, refunded: 0, refused: 0, pending: 0 },
             ghostspay: { leads: 0, pix: 0, paid: 0, refunded: 0, refused: 0, pending: 0 },
             sunize: { leads: 0, pix: 0, paid: 0, refunded: 0, refused: 0, pending: 0 },
             paradise: { leads: 0, pix: 0, paid: 0, refunded: 0, refused: 0, pending: 0 }
@@ -5858,10 +5835,6 @@ function initAdmin() {
             const source = summary.gatewayStats || {};
             const base = emptyGatewayStats();
             metrics.gatewayStats = {
-                ativushub: {
-                    ...base.ativushub,
-                    ...(source.ativushub || {})
-                },
                 ghostspay: {
                     ...base.ghostspay,
                     ...(source.ghostspay || {})
@@ -5893,20 +5866,20 @@ function initAdmin() {
             const frete = String(row.frete || '').trim();
             const pixTxid = String(row.pix_txid || '').trim();
             const ev = String(row.evento || '').toLowerCase().trim();
-            const gateway = normalizeGatewayKey(row.gateway || 'ativushub');
-            const gatewayStats = metrics.gatewayStats[gateway];
+            const gateway = resolveGatewayMetricKey(row.gateway || '');
+            const gatewayStats = gateway ? metrics.gatewayStats[gateway] : null;
 
-            gatewayStats.leads += 1;
+            if (gatewayStats) gatewayStats.leads += 1;
             if (pixTxid && pixTxid !== '-') metrics.pix += 1;
-            if (pixTxid && pixTxid !== '-') gatewayStats.pix += 1;
+            if (pixTxid && pixTxid !== '-' && gatewayStats) gatewayStats.pix += 1;
             if (frete && frete !== '-') metrics.frete += 1;
             if (cep && cep !== '-') metrics.cep += 1;
             const isPaid = row.is_paid === true || ev === 'pix_confirmed' || ev === 'pagamento_confirmado' || ev === 'paid';
             if (isPaid) metrics.paid += 1;
-            if (isPaid) gatewayStats.paid += 1;
-            else if (ev === 'pix_refunded') gatewayStats.refunded += 1;
-            else if (ev === 'pix_refused' || ev === 'pix_failed') gatewayStats.refused += 1;
-            else if (ev === 'pix_pending' || ev === 'pix_created') gatewayStats.pending += 1;
+            if (isPaid && gatewayStats) gatewayStats.paid += 1;
+            else if (ev === 'pix_refunded' && gatewayStats) gatewayStats.refunded += 1;
+            else if ((ev === 'pix_refused' || ev === 'pix_failed') && gatewayStats) gatewayStats.refused += 1;
+            else if ((ev === 'pix_pending' || ev === 'pix_created') && gatewayStats) gatewayStats.pending += 1;
             if (!metrics.lastUpdated && (row.event_time || row.updated_at)) metrics.lastUpdated = row.event_time || row.updated_at;
         });
         }
@@ -5935,19 +5908,13 @@ function initAdmin() {
         if (funnelFreteValue) funnelFreteValue.textContent = `${pctFrete}%`;
         if (funnelCepValue) funnelCepValue.textContent = `${pctCep}%`;
 
-        const ativusStats = metrics.gatewayStats.ativushub || { pix: 0, paid: 0 };
         const ghostStats = metrics.gatewayStats.ghostspay || { pix: 0, paid: 0 };
         const sunizeStats = metrics.gatewayStats.sunize || { pix: 0, paid: 0 };
         const paradiseStats = metrics.gatewayStats.paradise || { pix: 0, paid: 0 };
-        const ativusConv = ativusStats.pix ? Math.round((Number(ativusStats.paid || 0) / Number(ativusStats.pix || 0)) * 100) : 0;
         const ghostConv = ghostStats.pix ? Math.round((Number(ghostStats.paid || 0) / Number(ghostStats.pix || 0)) * 100) : 0;
         const sunizeConv = sunizeStats.pix ? Math.round((Number(sunizeStats.paid || 0) / Number(sunizeStats.pix || 0)) * 100) : 0;
         const paradiseConv = paradiseStats.pix ? Math.round((Number(paradiseStats.paid || 0) / Number(paradiseStats.pix || 0)) * 100) : 0;
 
-        if (metricGatewayAtivushubConv) metricGatewayAtivushubConv.textContent = `${ativusConv}%`;
-        if (metricGatewayAtivushubDetail) {
-            metricGatewayAtivushubDetail.textContent = `${Number(ativusStats.paid || 0)} pagos / ${Number(ativusStats.pix || 0)} PIX`;
-        }
         if (metricGatewayGhostspayConv) metricGatewayGhostspayConv.textContent = `${ghostConv}%`;
         if (metricGatewayGhostspayDetail) {
             metricGatewayGhostspayDetail.textContent = `${Number(ghostStats.paid || 0)} pagos / ${Number(ghostStats.pix || 0)} PIX`;
@@ -5963,7 +5930,6 @@ function initAdmin() {
 
         if (metricBestGateway) {
             const options = [
-                { label: 'AtivusHUB', conv: ativusConv, paid: Number(ativusStats.paid || 0), pix: Number(ativusStats.pix || 0) },
                 { label: 'GhostsPay', conv: ghostConv, paid: Number(ghostStats.paid || 0), pix: Number(ghostStats.pix || 0) },
                 { label: 'Sunize', conv: sunizeConv, paid: Number(sunizeStats.paid || 0), pix: Number(sunizeStats.pix || 0) },
                 { label: 'Paradise', conv: paradiseConv, paid: Number(paradiseStats.paid || 0), pix: Number(paradiseStats.pix || 0) }
@@ -6046,9 +6012,7 @@ function initAdmin() {
         const data = await res.json().catch(() => ({}));
         await loadLeads({ reset: true });
         if (leadsReconcileStatus) {
-            const blocked = Number(data.blockedByAtivus || 0);
-            const warning = blocked ? ` Bloqueados Ativus: ${blocked}.` : '';
-            leadsReconcileStatus.textContent = `Consultados ${data.checked || 0}, pagos ${data.confirmed || 0}, pendentes ${data.pending || 0}, estornados ${data.refunded || 0}, recusados ${data.refused || 0}. Leads sincronizados: ${data.updated || 0}.${warning}`;
+            leadsReconcileStatus.textContent = `Consultados ${data.checked || 0}, pagos ${data.confirmed || 0}, pendentes ${data.pending || 0}, estornados ${data.refunded || 0}, recusados ${data.refused || 0}. Leads sincronizados: ${data.updated || 0}.`;
         }
         if (data.warning) showToast(data.warning, 'error');
         showToast('Consulta de transacoes finalizada e painel sincronizado.', 'success');
@@ -6538,20 +6502,19 @@ function initAdmin() {
     testPushcutBtn?.addEventListener('click', runPushcutTest);
     processDispatchBtn?.addEventListener('click', runDispatchProcess);
     paymentsActiveGateway?.addEventListener('change', () => {
-        const selected = normalizeGatewayKey(paymentsActiveGateway?.value || 'ativushub');
+        const selected = normalizeGatewayKey(paymentsActiveGateway?.value || 'ghostspay');
         setCurrentGatewayCard(selected);
         setGatewayCardOpen(selected, true);
         if (metricActiveGateway) {
             metricActiveGateway.textContent = gatewayLabelForUi(selected);
         }
     });
-    gatewayAtivushubEnabled?.addEventListener('change', syncGatewaySwitches);
     gatewayGhostspayEnabled?.addEventListener('change', syncGatewaySwitches);
     gatewaySunizeEnabled?.addEventListener('change', syncGatewaySwitches);
     gatewayParadiseEnabled?.addEventListener('change', syncGatewaySwitches);
     gatewayConfigToggles.forEach((button) => {
         button.addEventListener('click', () => {
-            const gateway = button.getAttribute('data-gateway-config-toggle') || 'ativushub';
+            const gateway = button.getAttribute('data-gateway-config-toggle') || 'ghostspay';
             toggleGatewayCard(gateway);
         });
     });
@@ -6573,7 +6536,7 @@ function initAdmin() {
     });
 
     if (hasPaymentsForm) {
-        const selected = normalizeGatewayKey(paymentsActiveGateway?.value || 'ativushub');
+        const selected = normalizeGatewayKey(paymentsActiveGateway?.value || 'ghostspay');
         syncGatewaySwitches();
         setCurrentGatewayCard(selected);
         setGatewayCardOpen(selected, true);

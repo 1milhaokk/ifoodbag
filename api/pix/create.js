@@ -1,15 +1,12 @@
-const { sanitizeDigits, extractIp } = require('../../lib/ativus');
 const { upsertLead, getLeadBySessionId } = require('../../lib/lead-store');
 const { ensurePublicAccess } = require('../../lib/public-access');
 const { enqueueDispatch, processDispatchQueue } = require('../../lib/dispatch-queue');
-const { normalizeGatewayId } = require('../../lib/payment-gateway-config');
-const { getPaymentsConfig } = require('../../lib/payments-config-store');
 const {
-    requestCreateTransaction: requestAtivushubCreate,
-    requestTransactionStatus: requestAtivushubStatus,
-    getSellerId: getAtivushubSellerId,
-    resolvePostbackUrl: resolveAtivushubPostbackUrl
-} = require('../../lib/ativushub-provider');
+    getGatewayPriority,
+    normalizeActiveGatewayId,
+    normalizeGatewayId
+} = require('../../lib/payment-gateway-config');
+const { getPaymentsConfig } = require('../../lib/payments-config-store');
 const {
     requestCreateTransaction: requestGhostspayCreate,
     requestTransactionById: requestGhostspayStatus,
@@ -28,33 +25,36 @@ const {
 const { getParadiseStatus } = require('../../lib/paradise-status');
 
 function resolveGateway(rawBody = {}, payments = {}) {
-    const ativushubEnabled = payments?.gateways?.ativushub?.enabled !== false;
-    const ghostspayEnabled = payments?.gateways?.ghostspay?.enabled === true;
-    const sunizeEnabled = payments?.gateways?.sunize?.enabled === true;
-    const paradiseEnabled = payments?.gateways?.paradise?.enabled === true;
-    const requested = normalizeGatewayId(rawBody.gateway || rawBody.paymentGateway || payments.activeGateway);
-    if (requested === 'ghostspay' && ghostspayEnabled) return 'ghostspay';
-    if (requested === 'sunize' && sunizeEnabled) return 'sunize';
-    if (requested === 'paradise' && paradiseEnabled) return 'paradise';
-    if (requested === 'ghostspay') {
-        if (sunizeEnabled) return 'sunize';
-        if (paradiseEnabled) return 'paradise';
-        return ativushubEnabled ? 'ativushub' : 'ghostspay';
+    const requested = rawBody.gateway || rawBody.paymentGateway || payments.activeGateway;
+    const priority = getGatewayPriority(requested, payments.activeGateway);
+    const isEnabled = (gateway) => (payments?.gateways?.[gateway] || {}).enabled === true;
+    const hasGatewayCredentials = (gateway) => {
+        const config = payments?.gateways?.[gateway] || {};
+        if (gateway === 'ghostspay') return hasGhostspayCredentials(config);
+        if (gateway === 'sunize') return hasSunizeCredentials(config);
+        if (gateway === 'paradise') return hasParadiseCredentials(config);
+        return false;
+    };
+
+    for (const gateway of priority) {
+        if (!isEnabled(gateway)) continue;
+        if (hasGatewayCredentials(gateway)) return gateway;
     }
-    if (requested === 'sunize') {
-        if (ghostspayEnabled) return 'ghostspay';
-        if (paradiseEnabled) return 'paradise';
-        return ativushubEnabled ? 'ativushub' : 'sunize';
+
+    for (const gateway of priority) {
+        if (isEnabled(gateway)) return gateway;
     }
-    if (requested === 'paradise') {
-        if (ghostspayEnabled) return 'ghostspay';
-        if (sunizeEnabled) return 'sunize';
-        return ativushubEnabled ? 'ativushub' : 'paradise';
+
+    const allDisabled = priority.every((gateway) => !isEnabled(gateway));
+    if (allDisabled) {
+        const operationalFallback = ['ghostspay', 'sunize', 'paradise'];
+        for (const gateway of operationalFallback) {
+            if (hasGatewayCredentials(gateway)) return gateway;
+        }
+        return 'ghostspay';
     }
-    if (!ativushubEnabled && ghostspayEnabled) return 'ghostspay';
-    if (!ativushubEnabled && sunizeEnabled) return 'sunize';
-    if (!ativushubEnabled && paradiseEnabled) return 'paradise';
-    return 'ativushub';
+
+    return '';
 }
 
 function hasGhostspayCredentials(config = {}) {
@@ -73,6 +73,18 @@ function hasSunizeCredentials(config = {}) {
 
 function hasParadiseCredentials(config = {}) {
     return Boolean(String(config.apiKey || '').trim());
+}
+
+function sanitizeDigits(value = '') {
+    return String(value || '').replace(/\D/g, '');
+}
+
+function extractIp(req) {
+    const forwarded = req?.headers?.['x-forwarded-for'];
+    if (typeof forwarded === 'string' && forwarded.length > 0) {
+        return forwarded.split(',')[0].trim();
+    }
+    return req?.socket?.remoteAddress || '';
 }
 
 function toE164Phone(value = '') {
@@ -391,90 +403,12 @@ function resolveParadiseResponse(data = {}) {
     };
 }
 
-function resolveAtivushubStatusResponse(data = {}) {
-    const root = asObject(data);
-    const nested = asObject(root.data);
-
-    const txid = pickText(
-        root.idTransaction,
-        root.idtransaction,
-        nested.idTransaction,
-        nested.idtransaction
-    );
-    const paymentCode = pickText(
-        root.paymentCode,
-        root.paymentcode,
-        nested.paymentCode,
-        nested.paymentcode
-    );
-    const qrRaw = pickText(
-        root.paymentCodeBase64,
-        root.paymentcodebase64,
-        nested.paymentCodeBase64,
-        nested.paymentcodebase64
-    );
-    let paymentQrUrl = pickText(
-        root.paymentQrUrl,
-        nested.paymentQrUrl,
-        root.qrcodeUrl,
-        nested.qrcodeUrl
-    );
-    let paymentCodeBase64 = '';
-    if (!paymentQrUrl && qrRaw) {
-        if (/^https?:\/\//i.test(qrRaw) || qrRaw.startsWith('data:image')) {
-            paymentQrUrl = qrRaw;
-        } else {
-            paymentCodeBase64 = qrRaw;
-        }
-    }
-
-    const status = pickText(
-        root.status_transaction,
-        root.status,
-        nested.status_transaction,
-        nested.status
-    );
-    return { txid, paymentCode, paymentCodeBase64, paymentQrUrl, status, externalId: '' };
-}
-
 function normalizeStatus(value = '') {
     return String(value || '')
         .trim()
         .toLowerCase()
         .replace(/\s+/g, '_')
         .replace(/-+/g, '_');
-}
-
-function pickAtivusCreateError(data = {}) {
-    const code = pickText(
-        data?.errCode,
-        data?.errcode,
-        data?.errorCode,
-        data?.error_code,
-        data?.code
-    );
-    const message = pickText(
-        data?.message,
-        data?.msg,
-        data?.error,
-        data?.detail,
-        data?.descricao,
-        data?.description
-    );
-    return {
-        code: String(code || '').trim(),
-        message: String(message || '').trim()
-    };
-}
-
-function mapAtivusErrorCodeToHttpStatus(code = '', fallbackStatus = 502) {
-    const clean = String(code || '').trim();
-    if (!clean) return Number(fallbackStatus || 502);
-    if (clean === '401') return 422;
-    if (clean === '403') return 403;
-    if (clean === '404') return 404;
-    if (clean === '422') return 422;
-    return Number(fallbackStatus || 502);
 }
 
 function isTerminalPixStatus(value = '') {
@@ -509,7 +443,7 @@ function buildPixCreateInflightKey({ sessionId, gateway, shippingId, rewardId, t
     if (!cleanSession) return '';
     return [
         cleanSession,
-        String(normalizeGatewayId(gateway) || 'ativushub'),
+        String(normalizeActiveGatewayId(gateway) || 'ghostspay'),
         String(shippingId || '').trim(),
         String(rewardId || '').trim(),
         Number(totalAmount || 0).toFixed(2),
@@ -621,15 +555,6 @@ async function hydratePixVisualByGateway(gateway, gatewayConfig, txid) {
         return { paymentCode: '', paymentCodeBase64: '', paymentQrUrl: '', status: '', externalId: '' };
     }
 
-    const quickConfig = {
-        ...gatewayConfig,
-        timeoutMs: Math.max(1200, Math.min(Number(gatewayConfig?.timeoutMs || 12000), 3500))
-    };
-    const { response, data } = await requestAtivushubStatus(quickConfig, txid).catch(() => ({
-        response: { ok: false },
-        data: {}
-    }));
-    if (response?.ok) return resolveAtivushubStatusResponse(data || {});
     return { paymentCode: '', paymentCodeBase64: '', paymentQrUrl: '', status: '', externalId: '' };
 }
 
@@ -1244,90 +1169,14 @@ module.exports = async (req, res) => {
                     }
                 }
             } else {
-                const ativusAuthConfigured = Boolean(
-                    String(gatewayConfig.apiKeyBase64 || '').trim() ||
-                    String(gatewayConfig.apiKey || '').trim()
-                );
-                if (!ativusAuthConfigured) {
-                    createInflightError = new Error('ativushub_missing_credentials');
-                    return res.status(500).json({ error: 'API Key da AtivusHUB nao configurada.' });
-                }
-
-            const sellerId = await getAtivushubSellerId(gatewayConfig);
-            const ativusPayload = {
-                amount: totalAmount,
-                id_seller: sellerId,
-                customer: {
-                    name,
-                    email,
-                    cpf,
-                    phone,
-                    externaRef: orderId,
-                    address: {
-                        street,
-                        streetNumber,
-                        complement,
-                        zipCode,
-                        neighborhood,
-                        city,
-                        state,
-                        country: 'br'
+                createInflightError = new Error('gateway_unavailable');
+                return res.status(503).json({
+                    error: 'Nenhum gateway PIX valido disponivel para gerar a cobranca.',
+                    detail: {
+                        requestedGateway: normalizeActiveGatewayId(rawBody.gateway || rawBody.paymentGateway || payments?.activeGateway),
+                        selectedGateway: gateway
                     }
-                },
-                checkout: {
-                    utm_source: rawBody?.utm?.utm_source || '',
-                    utm_medium: rawBody?.utm?.utm_medium || '',
-                    utm_campaign: rawBody?.utm?.utm_campaign || '',
-                    utm_term: rawBody?.utm?.utm_term || '',
-                    utm_content: rawBody?.utm?.utm_content || '',
-                    src: rawBody?.utm?.src || '',
-                    sck: rawBody?.utm?.sck || ''
-                },
-                items,
-                postbackUrl: resolveAtivushubPostbackUrl(req, gatewayConfig),
-                ip: extractIp(req),
-                metadata: {
-                    gateway: 'ativushub',
-                    orderId,
-                    shippingId: normalizedShipping?.id || '',
-                    shippingName: normalizedShipping?.name || '',
-                    cep: zipCode,
-                    reference: extra?.reference || '',
-                    bumpSelected: normalizedBump.selected,
-                    bumpPrice: normalizedBump.price,
-                    upsellEnabled,
-                    upsellKind: upsellEnabled ? String(upsell?.kind || 'frete_1dia') : '',
-                    upsellTitle: upsellEnabled ? String(upsell?.title || 'Prioridade de envio') : '',
-                    upsellPrice: upsellEnabled ? Number(upsell?.price || 0) : 0,
-                    previousTxid: upsellEnabled ? String(upsell?.previousTxid || '') : ''
-                },
-                pix: {
-                    expiresInDays: 2
-                }
-            };
-
-                ({ response, data } = await requestAtivushubCreate(gatewayConfig, ativusPayload));
-                if (!response?.ok) {
-                    createInflightError = new Error('ativushub_create_failed');
-                    return res.status(response?.status || 502).json({
-                        error: 'Falha ao gerar o PIX.',
-                        detail: data
-                    });
-                }
-
-                txid = String(data?.idTransaction || data?.idtransaction || '').trim();
-                paymentCode = String(data?.paymentCode || data?.paymentcode || '').trim();
-                paymentCodeBase64 = String(data?.paymentCodeBase64 || data?.paymentcodebase64 || '').trim();
-                statusRaw = String(data?.status_transaction || data?.status || '').trim();
-
-                const ativusError = pickAtivusCreateError(data);
-                if (!txid && (ativusError.code || ativusError.message)) {
-                    createInflightError = new Error(`ativushub_create_business_error:${ativusError.code || 'unknown'}`);
-                    return res.status(mapAtivusErrorCodeToHttpStatus(ativusError.code, response?.status || 502)).json({
-                        error: ativusError.message || 'Falha ao gerar o PIX.',
-                        detail: data
-                    });
-                }
+                });
             }
 
             if (!txid) {
