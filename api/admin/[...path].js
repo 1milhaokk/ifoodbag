@@ -1096,6 +1096,8 @@ function mapLeadReadable(row) {
     const payloadUtm = asObject(payload?.utm);
     const gateway = resolveLeadGateway(row, payload);
     const isPaid = isLeadPaid(row, payload);
+    const isRefunded = isLeadRefunded(row, payload);
+    const isRefused = isLeadRefused(row, payload);
     const isUpsell = Boolean(
         payload?.upsell?.enabled === true ||
         String(row?.shipping_id || '').trim().toLowerCase() === 'expresso_1dia' ||
@@ -1103,9 +1105,9 @@ function mapLeadReadable(row) {
     );
     const statusFunil = isPaid
         ? (isUpsell ? 'upsell_pagamento_confirmado' : 'pagamento_confirmado')
-        : row?.last_event === 'pix_refunded'
+        : isRefunded
             ? 'pix_estornado'
-            : row?.last_event === 'pix_refused'
+            : isRefused
                 ? 'pix_recusado'
                 : row?.pix_txid
                     ? 'pix_gerado'
@@ -1204,6 +1206,32 @@ function resolveLeadCurrentPixTxid(row, payload) {
     ).trim();
 }
 
+function resolveLeadPayloadPixTxid(payload) {
+    return String(
+        payload?.pixTxid ||
+        payload?.pix?.idTransaction ||
+        payload?.pix?.idtransaction ||
+        payload?.pix?.txid ||
+        ''
+    ).trim();
+}
+
+function hasStaleRefusedPixState(row, payload) {
+    const rowTxid = String(row?.pix_txid || '').trim();
+    const payloadTxid = resolveLeadPayloadPixTxid(payload);
+    if (!rowTxid || !payloadTxid || rowTxid === payloadTxid) return false;
+    const lastEvent = String(row?.last_event || '').toLowerCase().trim();
+    if (lastEvent === 'pix_refused') return true;
+    if (toIsoDate(payload?.pixRefusedAt)) return true;
+    return (
+        isRefusedFromStatus(payload?.pixStatus) ||
+        isRefusedFromStatus(payload?.pix?.status) ||
+        isRefusedFromStatus(payload?.status) ||
+        isRefusedFromStatus(payload?.status_transaction) ||
+        isRefusedFromStatus(payload?.situacao)
+    );
+}
+
 function resolveLeadCurrentPixStatus(row, payload) {
     return String(
         payload?.pixStatus ||
@@ -1230,6 +1258,7 @@ function isLeadRefunded(row, payload) {
 }
 
 function isLeadRefused(row, payload) {
+    if (hasStaleRefusedPixState(row, payload)) return false;
     if (String(row?.last_event || '').toLowerCase().trim() === 'pix_refused') return true;
     if (toIsoDate(payload?.pixRefusedAt)) return true;
     return (

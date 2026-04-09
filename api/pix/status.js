@@ -58,6 +58,24 @@ function asObject(input) {
     return input && typeof input === 'object' && !Array.isArray(input) ? input : {};
 }
 
+function getLeadCurrentPixTxid(leadData) {
+    const payload = asObject(leadData?.payload);
+    return pickText(
+        leadData?.pix_txid,
+        payload?.pixTxid,
+        payload?.pix?.idTransaction,
+        payload?.pix?.idtransaction,
+        payload?.pix?.txid
+    );
+}
+
+function hasStaleSessionPixConflict(leadData, incomingTxid = '') {
+    const requestedTxid = String(incomingTxid || '').trim();
+    if (!leadData || !requestedTxid) return false;
+    const currentTxid = getLeadCurrentPixTxid(leadData);
+    return Boolean(currentTxid) && currentTxid !== requestedTxid;
+}
+
 function toIsoDate(value) {
     if (!value && value !== 0) return null;
     if (value instanceof Date && !Number.isNaN(value.getTime())) return value.toISOString();
@@ -409,13 +427,19 @@ module.exports = async (req, res) => {
     }
 
     let leadData = null;
+    let sessionFallbackBlocked = false;
     if (txid) {
         const byTxid = await getLeadByPixTxid(txid).catch(() => ({ ok: false, data: null }));
         leadData = byTxid?.ok ? byTxid.data : null;
     }
     if (!leadData && sessionId) {
         const bySession = await getLeadBySessionId(sessionId).catch(() => ({ ok: false, data: null }));
-        leadData = bySession?.ok ? bySession.data : null;
+        const sessionLead = bySession?.ok ? bySession.data : null;
+        if (hasStaleSessionPixConflict(sessionLead, txid)) {
+            sessionFallbackBlocked = true;
+        } else {
+            leadData = sessionLead;
+        }
     }
 
     const payments = await getPaymentsConfig();
@@ -616,17 +640,20 @@ module.exports = async (req, res) => {
     }
 
     let leadUpdated = false;
-    if (leadData || sessionId) {
+    if (!sessionFallbackBlocked && (leadData || sessionId)) {
         const patch = buildPatchFromGatewayStatus(leadData, txid, gateway, statusRaw, nextStatus, changedAtIso);
         let updated = await updateLeadByPixTxid(txid, patch).catch(() => ({ ok: false, count: 0 }));
         if ((!updated?.ok || Number(updated?.count || 0) === 0) && sessionId) {
-            updated = await updateLeadBySessionId(sessionId, patch).catch(() => ({ ok: false, count: 0 }));
+            const sessionLead = leadData || (await getLeadBySessionId(sessionId).catch(() => ({ ok: false, data: null })))?.data;
+            if (!hasStaleSessionPixConflict(sessionLead, txid)) {
+                updated = await updateLeadBySessionId(sessionId, patch).catch(() => ({ ok: false, count: 0 }));
+            }
         }
         leadUpdated = Boolean(updated?.ok) && Number(updated?.count || 0) > 0;
     }
 
     const terminalStatus = nextStatus === 'paid' || nextStatus === 'refunded' || nextStatus === 'refused';
-    const shouldDispatchTerminalFallback = terminalStatus && leadStatus.status !== nextStatus;
+    const shouldDispatchTerminalFallback = !sessionFallbackBlocked && terminalStatus && leadStatus.status !== nextStatus;
 
     if (shouldDispatchTerminalFallback) {
         let latestLead = leadData;

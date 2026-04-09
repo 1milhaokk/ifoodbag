@@ -77,6 +77,25 @@ function asObject(input) {
     return input && typeof input === 'object' && !Array.isArray(input) ? input : {};
 }
 
+function getLeadCurrentPixTxid(leadData) {
+    const payload = asObject(leadData?.payload);
+    return String(
+        leadData?.pix_txid ||
+        payload?.pixTxid ||
+        payload?.pix?.idTransaction ||
+        payload?.pix?.idtransaction ||
+        payload?.pix?.txid ||
+        ''
+    ).trim();
+}
+
+function hasStaleSessionPixConflict(leadData, incomingTxid = '') {
+    const requestedTxid = String(incomingTxid || '').trim();
+    if (!leadData || !requestedTxid) return false;
+    const currentTxid = getLeadCurrentPixTxid(leadData);
+    return Boolean(currentTxid) && currentTxid !== requestedTxid;
+}
+
 function mergeLeadPayload(basePayload, patch) {
     return {
         ...asObject(basePayload),
@@ -647,7 +666,12 @@ module.exports = async (req, res) => {
         leadData = lead?.ok ? lead.data : null;
         if (!leadData && sessionOrderId) {
             const bySessionBefore = await getLeadBySessionId(sessionOrderId).catch(() => ({ ok: false, data: null }));
-            leadData = bySessionBefore?.ok ? bySessionBefore.data : null;
+            const sessionLead = bySessionBefore?.ok ? bySessionBefore.data : null;
+            if (hasStaleSessionPixConflict(sessionLead, txid)) {
+                res.status(200).json({ status: 'stale_txid_ignored', gateway, txid });
+                return;
+            }
+            leadData = sessionLead;
         }
         rememberPreviousEvent(leadData);
 
@@ -681,30 +705,35 @@ module.exports = async (req, res) => {
         }).catch(() => ({ ok: false, count: 0 }));
         if ((!upByTx?.ok || Number(upByTx?.count || 0) === 0) && sessionOrderId) {
             const bySessionBefore = leadData || (await getLeadBySessionId(sessionOrderId).catch(() => ({ ok: false, data: null })))?.data;
-            const sessionPayloadPatch = mergeLeadPayload(bySessionBefore?.payload, {
-                gateway,
-                pixGateway: gateway,
-                paymentGateway: gateway,
-                pixTxid: txid,
-                pixStatus: statusRaw || null,
-                pixStatusChangedAt: statusChangedAt,
-                pixCreatedAt: asObject(bySessionBefore?.payload).pixCreatedAt || pixCreatedAtFromGateway || bySessionBefore?.created_at || undefined,
-                pixPaidAt: isPaid ? statusChangedAt : undefined,
-                pixRefundedAt: isRefunded ? statusChangedAt : undefined,
-                pixRefusedAt: isRefused ? statusChangedAt : undefined,
-                lastWebhookSignature: webhookSignature || undefined
-            });
-            await updateLeadBySessionId(sessionOrderId, {
-                last_event: lastEvent,
-                stage: 'pix',
-                payload: sessionPayloadPatch
-            }).catch(() => ({ ok: false, count: 0 }));
+            if (!hasStaleSessionPixConflict(bySessionBefore, txid)) {
+                const sessionPayloadPatch = mergeLeadPayload(bySessionBefore?.payload, {
+                    gateway,
+                    pixGateway: gateway,
+                    paymentGateway: gateway,
+                    pixTxid: txid,
+                    pixStatus: statusRaw || null,
+                    pixStatusChangedAt: statusChangedAt,
+                    pixCreatedAt: asObject(bySessionBefore?.payload).pixCreatedAt || pixCreatedAtFromGateway || bySessionBefore?.created_at || undefined,
+                    pixPaidAt: isPaid ? statusChangedAt : undefined,
+                    pixRefundedAt: isRefunded ? statusChangedAt : undefined,
+                    pixRefusedAt: isRefused ? statusChangedAt : undefined,
+                    lastWebhookSignature: webhookSignature || undefined
+                });
+                await updateLeadBySessionId(sessionOrderId, {
+                    last_event: lastEvent,
+                    stage: 'pix',
+                    payload: sessionPayloadPatch
+                }).catch(() => ({ ok: false, count: 0 }));
+            }
         }
         const refreshed = await getLeadByPixTxid(txid).catch(() => ({ ok: false, data: null }));
         leadData = refreshed?.ok ? refreshed.data : null;
         if (!leadData && sessionOrderId) {
             const bySessionAfter = await getLeadBySessionId(sessionOrderId).catch(() => ({ ok: false, data: null }));
-            leadData = bySessionAfter?.ok ? bySessionAfter.data : null;
+            const sessionLead = bySessionAfter?.ok ? bySessionAfter.data : null;
+            if (!hasStaleSessionPixConflict(sessionLead, txid)) {
+                leadData = sessionLead;
+            }
         }
         rememberPreviousEvent(leadData);
     } else if (sessionOrderId) {
@@ -747,6 +776,10 @@ module.exports = async (req, res) => {
         const byIdentity = await findLeadByIdentity(evt.fallbackIdentity || {}).catch(() => ({ ok: false, data: null }));
         if (byIdentity?.ok && byIdentity?.data) {
             leadData = byIdentity.data;
+            if (hasStaleSessionPixConflict(leadData, txid)) {
+                res.status(200).json({ status: 'stale_txid_ignored', gateway, txid });
+                return;
+            }
             rememberPreviousEvent(leadData);
             if (isLifecycleRegression(previousLastEvent, lastEvent)) {
                 res.status(200).json({ status: 'regression_ignored', gateway });
